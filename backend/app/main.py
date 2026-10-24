@@ -51,7 +51,7 @@ async def binance_markets() -> dict[str, Any]:
     return {"source": "Binance public Spot exchangeInfo", "private_account_connected": False, "count": len(symbols), "symbols": symbols}
 
 async def _grok_request(prompt: str) -> dict[str, Any]:
-    """Try configured keys only; fallback occurs on provider errors, not to evade rate limits."""
+    """Try the configured keys in order (primary, then secondary) when one is limited, rejected or failing."""
     keys = [os.getenv("XAI_API_KEY_PRIMARY"), os.getenv("XAI_API_KEY_SECONDARY")]
     keys = [k for k in keys if k]
     if not keys:
@@ -62,9 +62,12 @@ async def _grok_request(prompt: str) -> dict[str, Any]:
             try:
                 resp = await client.post("https://api.x.ai/v1/responses", headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, json={"model": os.getenv("XAI_MODEL", "grok-4.7"), "input": prompt})
                 if resp.status_code == 429:
-                    # Do not automatically cycle keys on a rate-limit response; obey provider limits.
-                    raise HTTPException(status_code=429, detail="Grok rate limit reached. Wait and retry according to xAI limits.")
-                if resp.status_code in (401, 403):
+                    # Daily/rate limit on this key: move on to the next configured key; only fail if every key is limited.
+                    last_status = 429
+                    if index == len(keys) - 1:
+                        raise HTTPException(status_code=429, detail="Grok limit reached on all configured keys. Wait and retry according to xAI limits.")
+                    continue
+                if resp.status_code in (401, 402, 403):
                     last_status = resp.status_code
                     continue
                 resp.raise_for_status()
@@ -372,26 +375,61 @@ class DerivOrderRequest(BaseModel):
     client_order_id: str = Field(min_length=8, max_length=36)
 
 
-def _deriv_rpc(creds: dict[str, Any], request_payload: dict[str, Any]) -> dict[str, Any]:
-    """Single Deriv WebSocket request helper; never logs the token."""
+def _deriv_socket(creds: dict[str, Any]):
+    """Open an authenticated Deriv socket. New pat_ tokens use REST + a one-time socket URL; old tokens use authorize."""
     try:
         import websocket  # type: ignore
     except ImportError as exc:
         raise RuntimeError("Install websocket-client to use the Deriv adapter.") from exc
+    import json
     app_id = creds.get("app_id") or os.getenv("DERIV_APP_ID", "1089")
+    token = creds["api_key"]
+    if str(token).startswith("pat_"):
+        headers = {"Authorization": f"Bearer {token}", "Deriv-App-ID": str(app_id)}
+        try:
+            with httpx.Client(timeout=12) as client:
+                listing = client.get("https://api.derivws.com/trading/v1/options/accounts", headers=headers)
+                listing.raise_for_status()
+                data = listing.json().get("data") or []
+                accounts = data if isinstance(data, list) else (data.get("accounts") or data.get("items") or [])
+                want_demo = creds.get("account_mode") == "demo"
+                def _is_demo(a: dict[str, Any]) -> bool:
+                    aid = str(a.get("account_id") or a.get("loginid") or a.get("id") or "")
+                    return a.get("account_type") == "demo" or a.get("is_virtual") in (1, True) or aid.upper().startswith(("VR", "DEM"))
+                chosen = next((a for a in accounts if _is_demo(a) == want_demo), None)
+                if not chosen:
+                    raise RuntimeError("No %s account found for this Deriv token." % ("demo" if want_demo else "real"))
+                account_id = chosen.get("account_id") or chosen.get("loginid") or chosen.get("id")
+                otp = client.post(f"https://api.derivws.com/trading/v1/options/accounts/{account_id}/otp", headers=headers)
+                otp.raise_for_status()
+                url = (otp.json().get("data") or {}).get("url")
+        except httpx.HTTPError as exc:
+            raise RuntimeError(f"Deriv REST login failed: {exc.__class__.__name__}. Check the token, the App ID registered at developers.deriv.com, and the network.") from exc
+        if not url:
+            raise RuntimeError("Deriv did not return a socket address.")
+        ws = websocket.create_connection(url, timeout=12)
+        return ws, {"loginid": account_id, "currency": chosen.get("currency"), "is_virtual": _is_demo(chosen)}
     ws = websocket.create_connection(f"wss://ws.derivws.com/websockets/v3?app_id={app_id}", timeout=12)
+    ws.send(json.dumps({"authorize": token}))
+    auth = json.loads(ws.recv())
+    if auth.get("error"):
+        ws.close()
+        raise RuntimeError(auth["error"].get("message", "Deriv authorization failed"))
+    auth_data = auth.get("authorize", {})
+    return ws, {"loginid": auth_data.get("loginid"), "currency": auth_data.get("currency"), "is_virtual": bool(auth_data.get("is_virtual"))}
+
+
+def _deriv_rpc(creds: dict[str, Any], request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Single Deriv WebSocket request helper; never logs the token."""
+    import json
+    ws, auth_data = _deriv_socket(creds)
     try:
-        ws.send(__import__("json").dumps({"authorize": creds["api_key"]}))
-        auth = __import__("json").loads(ws.recv())
-        if auth.get("error"):
-            raise RuntimeError(auth["error"].get("message", "Deriv authorization failed"))
-        auth_data = auth.get("authorize", {})
         is_virtual = bool(auth_data.get("is_virtual"))
         expected_virtual = creds.get("account_mode") == "demo"
         if is_virtual != expected_virtual:
             raise RuntimeError("Deriv token account type does not match the selected account mode. Reconfigure with the correct demo/live selection.")
-        ws.send(__import__("json").dumps(request_payload))
-        reply = __import__("json").loads(ws.recv())
+        ws.send(json.dumps(request_payload))
+        reply = json.loads(ws.recv())
         if reply.get("error"):
             raise RuntimeError(reply["error"].get("message", "Deriv request failed"))
         return {"authorize": {"loginid": auth_data.get("loginid"), "currency": auth_data.get("currency"), "is_virtual": is_virtual}, "response": reply}

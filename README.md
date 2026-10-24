@@ -23,3 +23,8 @@ Auto trade and "allow on LIVE" are never saved. Live arming needs the exact phra
 `bash push.sh` in Termux pushes this folder and starts two workflows: **Deploy TradeBrain web** (GitHub Pages) and **Build Android APK** (Capacitor, debug APK). The APK appears under the repo's **Releases** page in about 5-8 minutes. Install it from your phone; allow "install unknown apps" for your browser.
 
 The app talks to the backend at `http://127.0.0.1:8001`, so run the backend in Termux (`backend/README.md`) while using the broker console. Auto orders on Binance use hybrid sizing: risk % of balance / stop distance, capped by the size in the order box.
+
+## v6 changes
+- Deriv: new `pat_` tokens use REST + one-time socket; old tokens use the classic socket. **Diagnose** button tests each step. Backend adapter supports both too.
+- Grok: two key slots (primary + backup) with automatic failover on daily/rate limits, optional load sharing, per-key call counter, AI review of each signal.
+- UI: connection status chips, SVG icons, refined cards, stats, tables, buttons and navigation. Nothing removed.

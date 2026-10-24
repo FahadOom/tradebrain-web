@@ -1,6 +1,6 @@
 {
   "name": "tradebrain-web",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "scripts": {
     "test": "node tests/core.test.js && node tests/gates.test.js && node tests/sizing.test.js",

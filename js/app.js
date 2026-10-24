@@ -246,7 +246,7 @@
   async function testBackend() {
     S().backendUrl = store.clean({ ...S(), backendUrl: $('be-url').value }).backendUrl; $('be-url').value = S().backendUrl; persist();
     $('be-tag').textContent = 'Checking…';
-    try { const d = await TB.exec.api('/api/health'); $('be-tag').textContent = `Online · Grok ${d.grok_primary_configured ? 'set' : 'missing'}`; $('be-tag').className = 'tag ok'; }
+    try { const d = await TB.exec.api('/api/health'); $('be-tag').textContent = `Online · Grok ${d.grok_primary_configured ? 'set' : 'missing'}${d.grok_secondary_configured ? ' + backup' : ''}`; $('be-tag').className = 'tag ok'; }
     catch (e) { $('be-tag').textContent = 'Offline'; $('be-tag').className = 'tag bad'; toast(e.message); }
   }
   function syncAuto() {

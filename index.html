@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1120">
 <meta name="description" content="TradeBrain: market scanner, Traders Council and guarded execution console.">
-<title>TradeBrain</title>
+<title>TradeBrain · AI trading workspace</title>
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="./css/styles.css">
@@ -20,6 +20,11 @@
   <div class="top-actions">
     <span id="net-pill" class="pill idle"><i></i><span id="net-text">Ready</span></span>
     <button id="install-btn" class="btn ghost" hidden>Install</button>
+  </div>
+  <div class="conn-strip" id="conn-strip" aria-label="Connections">
+    <button class="chip off" id="cs-deriv" type="button"><i></i><b>Deriv</b><em>Not connected</em></button>
+    <button class="chip off" id="cs-binance" type="button"><i></i><b>Binance</b><em>Not connected</em></button>
+    <button class="chip off" id="cs-ai" type="button"><i></i><b>Grok</b><em>No key</em></button>
   </div>
 </header>
 
@@ -69,8 +74,8 @@
   </div>
   <div id="co-members" class="grid2"></div>
   <div class="card">
-    <div class="card-title"><div><div class="eyebrow">Optional second opinion</div><h3>Grok review</h3></div><span class="tag">Key stays on your backend</span></div>
-    <pre id="grok-out" class="out">Needs the local backend with an xAI key. Results are research notes, never instructions.</pre>
+    <div class="card-title"><div><div class="eyebrow">Optional second opinion</div><h3>Grok review</h3></div><span class="tag">Your keys · auto failover</span></div>
+    <pre id="grok-out" class="out">Uses the Grok key(s) from Connect (primary + backup), or your local backend. Results are research notes, never instructions.</pre>
     <div class="row"><button id="grok-btn" class="btn">Ask Grok about this market</button></div>
   </div>
 </section>
@@ -269,14 +274,14 @@
 </main>
 
 <nav class="tabbar" aria-label="Sections" id="tabbar">
-  <button data-view="scan" class="active"><b>◎</b>Scan</button>
-  <button data-view="council"><b>⚖</b>Council</button>
-  <button data-view="auto"><b>↻</b>Auto</button>
-  <button data-view="history"><b>≣</b>History</button>
-  <button data-view="lab"><b>✎</b>Lab</button>
-  <button data-view="risk"><b>◔</b>Risk</button>
-  <button data-view="markets"><b>◈</b>Markets</button>
-  <button data-view="broker"><b>⚡</b>Broker</button>
+  <button data-view="scan" class="active"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg></b>Scan</button>
+  <button data-view="council"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M7 20h10M5 8h14"/><path d="M5 8l-3 7a3.2 3.2 0 006 0zM19 8l-3 7a3.2 3.2 0 006 0z"/></svg></b>Council</button>
+  <button data-view="auto"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 10-2.6 5.9M20 5v5h-5"/></svg></b>Auto</button>
+  <button data-view="history"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h9"/></svg></b>History</button>
+  <button data-view="lab"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3h4M11 3v6l-5.5 9.3A2 2 0 007.2 21h9.6a2 2 0 001.7-2.7L13 9V3"/></svg></b>Lab</button>
+  <button data-view="risk"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></b>Risk</button>
+  <button data-view="markets"><b><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></b>Markets</button>
+  <button data-view="broker"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg></b>Broker</button>
 </nav>
 
 <dialog id="dlg"><form method="dialog" id="dlg-form" class="form">
