@@ -20,7 +20,7 @@
     finally { clearTimeout(t); }
   };
   const errMsg = j => (j && j.error && (j.error.message || (typeof j.error === 'string' ? j.error : JSON.stringify(j.error)))) || (j && j.message) || '';
-  const PROV = [[/^xai-/, 'Grok (xAI)', 'https://api.x.ai/v1'], [/^gsk_/, 'Groq', 'https://api.groq.com/openai/v1'], [/^AIza/, 'Gemini', 'https://generativelanguage.googleapis.com/v1beta/openai'], [/^sk-/, 'OpenAI', 'https://api.openai.com/v1']];
+  const PROV = [[/^xai-/, 'Grok (xAI)', 'https://api.x.ai/v1'], [/^gsk_/, 'Groq', 'https://api.groq.com/openai/v1'], [/^(AIza|AQ\.)/, 'Gemini', 'https://generativelanguage.googleapis.com/v1beta'], [/^sk-/, 'OpenAI', 'https://api.openai.com/v1']];
   const detect = k => { const p = PROV.find(x => x[0].test(k.trim())); return p ? { name: p[1], url: p[2] } : null; };
   const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
   const clean = v => String(v || '').replace(/[\s\u200b-\u200f\u2060\ufeff"'`“”‘’]/g, '');   // pasted keys often carry spaces, quotes or invisible characters
@@ -63,7 +63,10 @@
   const nextMidnight = () => { const d = new Date(); d.setUTCHours(24, 0, 0, 0); return +d; };
   const hasAI = () => !!(ld.ai || ld.ai2);
   const keyCount = () => [1, 2].filter(n => slot(n).key).length;
-  const modelIds = j => (j.data || j.models || []).map(m => String(m.id || m.name).replace(/^models\//, '')).sort();
+  const baseOf = (name, url) => name === 'Gemini' ? String(url).replace(/\/openai\/?$/, '') : url;      // Gemini now uses Google's native API (new AQ. keys need it)
+  const hdrs = (name, key) => name === 'Gemini' ? { 'x-goog-api-key': key } : { Authorization: 'Bearer ' + key };
+  const listUrl = (name, url) => baseOf(name, url) + '/models' + (name === 'Gemini' ? '?pageSize=200' : '');
+  const modelIds = j => (j.data || j.models || []).filter(m => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent')).map(m => String(m.id || m.name).replace(/^models\//, '')).sort();
   const NOT_CHAT = /image|imagine|imagen|embed|vision|tts|whisper|audio|guard|moderat|video|veo|rerank|live|transcribe|aqa|robotics|learnlm|safeguard|computer-use/i;
   /* Picks chat models per provider. Old versions sorted names alphabetically, which chose a tiny-quota reasoning model on Groq and a Gemma model on Gemini. */
   function rankModels(ids, prov) {
@@ -106,7 +109,7 @@
   /* Re-reads the model list for a saved key: builds the fallback models and replaces a model that cannot work (old saves picked bad ones). */
   async function refreshModels(n) {
     const s = slot(n), p = AIS[n].p;
-    const r = await tfetch(s.url + '/models', { headers: { Authorization: 'Bearer ' + s.key } }, 15000), j = await r.json().catch(() => ({}));
+    const r = await tfetch(listUrl(s.name, s.url), { headers: hdrs(s.name, s.key) }, 15000), j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(errMsg(j) || 'HTTP ' + r.status);
     const ids = modelIds(j), rk = rankModels(ids, s.name); ld[p + 'Alts'] = rk.slice(0, 5);
     if (rk.length && (!s.model || !ids.includes(s.model) || /qwen|deepseek-r1/i.test(s.model))) ld[p + 'Model'] = rk[0];
@@ -126,15 +129,20 @@
       let toks = tokBase(s.name);
       for (let at = 0; at < 3; at++) {
         let r, j;
+        const gem = s.name === 'Gemini';
         try {
-          r = await tfetch(s.url + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + s.key }, body: JSON.stringify({ model, temperature: 0.2, max_tokens: toks, messages: [{ role: 'system', content: system || SYS }, { role: 'user', content: prompt }] }) }, 60000);
+          r = gem
+            ? await tfetch(`${baseOf(s.name, s.url)}/models/${encodeURIComponent(model)}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': s.key }, body: JSON.stringify({ systemInstruction: { parts: [{ text: system || SYS }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: toks } }) }, 60000)
+            : await tfetch(s.url + '/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + s.key }, body: JSON.stringify({ model, temperature: 0.2, max_tokens: toks, messages: [{ role: 'system', content: system || SYS }, { role: 'user', content: prompt }] }) }, 60000);
           j = await r.json().catch(() => ({}));
         } catch (e) { throw mkErr(e.message, 0); }
-        const ch = j.choices && j.choices[0], txt = ch && ch.message && ch.message.content;
+        const ch = gem ? (j.candidates && j.candidates[0]) : (j.choices && j.choices[0]);
+        const txt = gem ? (ch && ch.content && (ch.content.parts || []).map(x => x.text || '').join('')) : (ch && ch.message && ch.message.content);
+        const cut = gem ? !!(ch && ch.finishReason === 'MAX_TOKENS') : !!(ch && ch.finish_reason === 'length');
         if (r.ok && txt && String(txt).trim()) { if (model !== s.model && [400, 404].includes(prev)) { ld[AIS[n].p + 'Model'] = model; save(); syncSel(n); } return { text: String(txt).trim(), model }; }
         const msg = errMsg(j) || (r.ok ? 'empty reply' : 'HTTP ' + r.status); let ra = 0; try { ra = +(r.headers && r.headers.get && r.headers.get('retry-after')) || 0; } catch (e) {}
         last = mkErr(msg, r.status, ra); prev = r.status;
-        if (r.ok && ch && ch.finish_reason === 'length' && toks < 4000) { toks *= 2; continue; }
+        if (r.ok && cut && toks < 4000) { toks *= 2; continue; }
         if ((r.status === 413 || /too large|reduce max_tokens|expected output/i.test(msg)) && at === 0 && toks > 150) { toks = Math.max(150, Math.floor(toks / 2)); continue; }
         break;
       }
@@ -145,11 +153,11 @@
   async function aiTest(n) {
     const a = AIS[n], cur = slot(n), box = $(a.box), k = clean(box.value) || cur.key, p = k && detect(k);
     if (!k) return say(a.out, 'Paste a key first.');
-    if (!p) return say(a.out, 'Key not recognised (expects xai-, gsk_, AIza or sk-).');
+    if (!p) return say(a.out, 'Key not recognised (expects xai-, gsk_, AIza, AQ. or sk-).');
     say(a.out, `Detected ${p.name}. Testing…`);
     try {
-      const r = await tfetch(p.url + '/models', { headers: { Authorization: 'Bearer ' + k } }), j = await r.json().catch(() => ({}));
-      if (!r.ok) return say(a.out, `${p.name}: ${r.status} ${errMsg(j) || 'key rejected'}`);
+      const r = await tfetch(listUrl(p.name, p.url), { headers: hdrs(p.name, k) }), j = await r.json().catch(() => ({}));
+      if (!r.ok) return say(a.out, `${p.name}: ${r.status} ${errMsg(j) || 'key rejected'}${p.name === 'Gemini' && /AQ\./.test(k.slice(0, 3)) && r.status === 401 ? '\nGoogle rejected this AQ. key. In Google Cloud Console > APIs & Services > Credentials, create an API key in a project with the Generative Language API enabled, and try that one.' : ''}`);
       const ids = modelIds(j), rk = rankModels(ids, p.name), sel = $(a.model);
       sel.innerHTML = ids.map(i => `<option>${i}</option>`).join('');
       const keep = cur.name === p.name && cur.model && ids.includes(cur.model) && !/qwen|deepseek-r1/i.test(cur.model), want = keep ? cur.model : (rk[0] || ''); sel.value = want;
@@ -419,10 +427,10 @@
     const sec = document.createElement('section'); sec.id = 'view-connect'; sec.className = 'view';
     sec.innerHTML = `<div class="page-head"><div><div class="eyebrow">In-app</div><h1>Connect</h1><p class="muted">Paste a key, tap Connect, see the balance. Demo and real are labelled. Orders need your tap to sign.</p></div></div>
 <div class="card form"><div class="card-title"><div><div class="eyebrow">AI · up to two keys</div><h3>AI keys (Gemini, Groq, Grok…)</h3></div><span class="tag">Team or failover</span></div>
-<p class="muted small">Use any mix: Gemini (AIza…), Groq (gsk_…), Grok (xai-…) or OpenAI (sk-…). Failover switches to the second key when the first is limited. Team mode makes both AIs answer together and only trusts a BUY or SELL when they agree. Pasted keys now stay in the boxes.</p>
+<p class="muted small">Use any mix: Gemini (AIza… or the new AQ.…), Groq (gsk_…), Grok (xai-…) or OpenAI (sk-…). Failover switches to the second key when the first is limited. Team mode makes both AIs answer together and only trusts a BUY or SELL when they agree. Pasted keys now stay in the boxes.</p>
 <div class="fields">${F('c-ai', 'Primary key (auto-detected)', 'type="password"')}<label>Primary model<select id="c-ai-model"></select></label></div>
 <div class="row"><button id="c-ai-go" class="btn primary">Test primary</button></div><pre id="c-ai-out" class="out">Not connected.</pre>
-<div class="fields">${F('c-ai2', 'Second key (optional, e.g. Gemini AIza…)', 'type="password"')}<label>Backup model<select id="c-ai2-model"></select></label></div>
+<div class="fields">${F('c-ai2', 'Second key (optional, e.g. Gemini AIza… or AQ.…)', 'type="password"')}<label>Backup model<select id="c-ai2-model"></select></label></div>
 <div class="row"><button id="c-ai2-go" class="btn primary">Test backup</button></div><pre id="c-ai2-out" class="out">Not connected.</pre>
 <div class="fields"><label>Key use<select id="c-ai-mode"><option value="failover">Primary first, backup when limited</option><option value="balance">Share the load across both keys</option><option value="team">Team: both AIs answer together</option></select></label>
 <label class="check"><input id="c-ai-gate" type="checkbox"> AI gate: only offer a BUY to sign when the AI team agrees</label>
@@ -442,7 +450,7 @@
     const b = document.createElement('button'); b.dataset.view = 'connect'; b.innerHTML = `<b>${KEYICON}</b>Connect`; const tb = document.getElementById('tabbar'); tb.insertBefore(b, tb.children[1] || null);
     const open = () => { document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-connect')); document.querySelectorAll('#tabbar button').forEach(x => x.classList.toggle('active', x === b)); window.scrollTo({ top: 0 }); };
     b.onclick = open;
-    const card = document.createElement('div'); card.className = 'card cta'; card.innerHTML = `<div><b>Keys &amp; balance</b><p class="muted small">Deriv, Binance and the AI keys connect here · build v7</p></div><button id="c-go" class="btn primary">Open Connect</button>`; document.getElementById('view-scan').prepend(card); $('c-go').onclick = open;
+    const card = document.createElement('div'); card.className = 'card cta'; card.innerHTML = `<div><b>Keys &amp; balance</b><p class="muted small">Deriv, Binance and the AI keys connect here · build v7.1</p></div><button id="c-go" class="btn primary">Open Connect</button>`; document.getElementById('view-scan').prepend(card); $('c-go').onclick = open;
     document.querySelectorAll('#conn-strip .chip').forEach(c => { c.onclick = open; });
     $('c-rem').checked = !!ld.remember; $('c-bm').value = ld.bTest === false ? 'live' : 'test'; $('c-ai-mode').value = ld.aiMode || 'failover'; $('c-ai-auto').checked = ld.aiAuto !== false;
     $('c-ai-go').onclick = () => aiTest(1); $('c-ai2-go').onclick = () => aiTest(2); $('c-d-go').onclick = dConnect; $('c-d-diag').onclick = dDiagnose; $('c-dacc').onchange = e => dPick(e.target.value).catch(x => say('c-d-out', '✖ ' + x.message)); $('c-dq').onclick = dQuote; $('c-dsign').onclick = dSign;
@@ -461,5 +469,5 @@
     if (ld.bOk) { say('c-b-out', 'Saved key ' + mask(ld.bKey) + '. Tap Connect to refresh the balance.'); chip('binance', 'warn', 'Saved · tap to refresh'); }
   }
   function init(c) { ctx = c; ctx.hist = c.hist || (() => {}); build(); }
-  window.TB = window.TB || {}; window.TB.live = { init, onScan, ask, hasAI, _t: { setLd: v => { ld = v; }, rankModels, callSlot, teamRun, hmacHex, verdictOf, clean, bHint } };
+  window.TB = window.TB || {}; window.TB.live = { init, onScan, ask, hasAI, _t: { aiTest, setLd: v => { ld = v; }, rankModels, callSlot, teamRun, hmacHex, verdictOf, clean, bHint } };
 })();

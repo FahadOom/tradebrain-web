@@ -24,6 +24,9 @@ Auto trade and "allow on LIVE" are never saved. Live arming needs the exact phra
 
 The app talks to the backend at `http://127.0.0.1:8001`, so run the backend in Termux (`backend/README.md`) while using the broker console. Auto orders on Binance use hybrid sizing: risk % of balance / stop distance, capped by the size in the order box.
 
+## v7.1 changes
+- Gemini: new AQ. keys (and AIza keys) now work, using Google's native API.
+
 ## v7 changes
 - Binance: clear reason and fix shown when the connection fails, plus a Diagnose button (also tests whether the key belongs to Testnet or Live). Signing works even over plain http.
 - Keys stay in the boxes after pasting and are remembered by default (tick "Show keys while typing" to see them).
