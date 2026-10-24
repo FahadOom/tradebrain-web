@@ -114,8 +114,9 @@
   async function askGrok() {
     const sym = $('grok-out').dataset.symbol || selected, cand = results.find(r => r.symbol === sym);
     if (!cand) return toast('Run the Council review first.');
-    $('grok-out').textContent = 'Asking your backend…';
+    $('grok-out').textContent = 'Asking…';
     try {
+      if (TB.live.hasAI()) { $('grok-out').textContent = await TB.live.ask(`Signal ${cand.signal} on ${cand.symbol} ${cand.tf}, score ${cand.score}, mode ${S().mode}. Evidence: ${(cand.reasons || []).join('; ')}`); return; }
       const d = await TB.exec.api('/api/grok/coordinate', { method: 'POST', body: JSON.stringify({ symbol: cand.symbol, timeframe: cand.tf, signal: cand.signal, score: cand.score, evidence: cand.reasons, conflicts: [], mode: S().mode }) });
       const a = d.assessment || {}; $('grok-out').textContent = `${a.model || 'model'} · ${a.key_slot || ''}\n\n${a.text || 'No text returned.'}`;
     } catch (e) { $('grok-out').textContent = 'Grok unavailable: ' + e.message; }
@@ -143,6 +144,7 @@
       const kill = gates.killSwitch(S());
       if (kill) { autoLog('PAUSED ' + kill); stopLoop(); return; }
       await TB.exec.onScan(results);
+      try { TB.live.onScan(results); } catch (e) { autoLog('LIVE ' + e.message); }
     } finally { loopBusy = false; }
   }
   function startLoop() {
@@ -302,6 +304,7 @@
     let deferred = null; window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferred = e; $('install-btn').hidden = false; });
     $('install-btn').addEventListener('click', async () => { if (deferred) { deferred.prompt(); await deferred.userChoice; deferred = null; $('install-btn').hidden = true; } });
     TB.exec.init({ S, toast, council: review, autoLog, onOrder: n => { $('lp-orders').textContent = n; } });
+    try { TB.live.init({ S, toast, council: review, hist: t => toast(t) }); } catch (e) { console.error('live init', e); }
     boot();
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});
   }

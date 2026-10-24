@@ -2,5 +2,6 @@
   "appId": "com.tradebrain.web",
   "appName": "TradeBrain",
   "webDir": "www",
+  "plugins": { "CapacitorHttp": { "enabled": true } },
   "server": { "androidScheme": "http", "cleartext": true }
 }
