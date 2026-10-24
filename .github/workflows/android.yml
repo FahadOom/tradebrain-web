@@ -1,0 +1,31 @@
+name: Build Android APK
+on:
+  push: { branches: [main] }
+  workflow_dispatch: {}
+permissions: { contents: write }
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - run: npm test
+      - run: npm install
+      - run: npm run www
+      - run: npx cap add android
+      - run: npx cap sync android
+      - name: Build debug APK
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tradebrain-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Publish APK as a release (stable link, replaced on every build)
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk TradeBrain.apk
+          gh release delete android-latest --cleanup-tag -y || true
+          gh release create android-latest TradeBrain.apk --title "TradeBrain APK (build ${{ github.run_number }})" --notes "Debug build. Tap TradeBrain.apk on your phone to install."

@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1120">
+<meta name="description" content="TradeBrain: market scanner, Traders Council and guarded execution console.">
+<title>TradeBrain</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <img src="./icon.svg" alt="" width="34" height="34">
+    <div><strong>TradeBrain</strong><small>Scan · Council · Execute with guardrails</small></div>
+  </div>
+  <div class="top-actions">
+    <span id="net-pill" class="pill idle"><i></i><span id="net-text">Ready</span></span>
+    <button id="install-btn" class="btn ghost" hidden>Install</button>
+  </div>
+</header>
+
+<main class="shell">
+
+<!-- ============ SCANNER ============ -->
+<section id="view-scan" class="view active">
+  <div class="page-head">
+    <div><div class="eyebrow">Live market watch</div><h1>Scanner</h1>
+      <p class="muted">EMA 9/21 · RSI · MACD · volume · ATR · jitter filter on closed candles</p></div>
+    <div class="row">
+      <select id="tf" aria-label="Timeframe">
+        <option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option>
+      </select>
+      <button id="scan-btn" class="btn primary">Scan</button>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><span>Checked</span><b id="st-checked">0</b></div>
+    <div class="stat"><span>Buy</span><b id="st-buy" class="up">0</b></div>
+    <div class="stat"><span>Sell</span><b id="st-sell" class="down">0</b></div>
+    <div class="stat"><span>Wait</span><b id="st-wait">0</b></div>
+  </div>
+  <p id="scan-status" class="status">Ready. Tap Scan to read current public candles.</p>
+  <div class="card flush"><div class="table-wrap"><table>
+    <thead><tr><th>Market</th><th class="num">Price</th><th>Trend</th><th class="num">RSI</th><th>Jitter</th><th>Signal</th><th>Score</th></tr></thead>
+    <tbody id="scan-rows"><tr><td colspan="7" class="empty">No scan yet.</td></tr></tbody>
+  </table></div></div>
+  <div class="card" id="detail">
+    <div class="card-title"><div><div class="eyebrow">Selected market</div><h3 id="detail-title">Tap a row</h3></div><span id="detail-pill" class="sig wait">WAIT</span></div>
+    <div id="detail-body" class="kv muted">Run a scan, then tap a market to see the reasoning.</div>
+  </div>
+</section>
+
+<!-- ============ COUNCIL ============ -->
+<section id="view-council" class="view">
+  <div class="page-head">
+    <div><div class="eyebrow">Multi-perspective review</div><h1>Traders Council</h1>
+      <p class="muted">Four voters and two gates, computed from the latest candles. A rule-based reconstruction, not a copy of any named trader.</p></div>
+    <button id="council-run" class="btn primary">Review</button>
+  </div>
+  <div class="stats">
+    <div class="stat"><span>Market</span><b id="co-market">—</b></div>
+    <div class="stat"><span>Agree</span><b id="co-agree">—</b></div>
+    <div class="stat"><span>Gates</span><b id="co-gates">—</b></div>
+    <div class="stat"><span>Verdict</span><b id="co-verdict">WAIT</b></div>
+  </div>
+  <div id="co-members" class="grid2"></div>
+  <div class="card">
+    <div class="card-title"><div><div class="eyebrow">Optional second opinion</div><h3>Grok review</h3></div><span class="tag">Key stays on your backend</span></div>
+    <pre id="grok-out" class="out">Needs the local backend with an xAI key. Results are research notes, never instructions.</pre>
+    <div class="row"><button id="grok-btn" class="btn">Ask Grok about this market</button></div>
+  </div>
+</section>
+
+<!-- ============ AUTO ============ -->
+<section id="view-auto" class="view">
+  <div class="page-head">
+    <div><div class="eyebrow">Continuous scalping</div><h1>Auto scanner</h1>
+      <p class="muted">Repeats the scan, ranks candidates and, only if you enable it in Broker, routes fresh signals to an armed account.</p></div>
+    <span id="loop-tag" class="tag warn">PAUSED</span>
+  </div>
+  <div class="card form">
+    <div class="fields">
+      <label>Scan every (seconds)<input id="a-interval" type="number" min="15" max="300" step="5"></label>
+      <label>Candidate score floor<input id="a-floor" type="number" min="40" max="95"></label>
+      <label>Mode
+        <select id="a-mode">
+          <option value="normal">NORMAL · council must not oppose</option>
+          <option value="aplus">A+ · score 80+ and 3 voters agree</option>
+          <option value="mad">MAD · floor −10, council ignored</option>
+        </select></label>
+      <label>Re-entry
+        <select id="a-reentry">
+          <option value="fresh">New candle required</option>
+          <option value="cooldown">New candle + 5 min cooldown</option>
+        </select></label>
+      <label>Voters needed to agree<input id="a-cmin" type="number" min="1" max="4"></label>
+    </div>
+    <div class="row">
+      <button id="loop-start" class="btn primary">Start</button>
+      <button id="loop-stop" class="btn danger" disabled>Pause</button>
+    </div>
+    <p id="loop-msg" class="status">Paused.</p>
+  </div>
+  <div class="stats">
+    <div class="stat"><span>Scans</span><b id="lp-count">0</b></div>
+    <div class="stat"><span>Last scan</span><b id="lp-last">—</b></div>
+    <div class="stat"><span>Candidates</span><b id="lp-cands">0</b></div>
+    <div class="stat"><span>Auto orders</span><b id="lp-orders">0</b></div>
+  </div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Ranked now</div><h3>Candidate queue</h3></div><span class="tag">Not orders</span></div>
+    <div id="queue" class="list"><div class="empty">Run a scan to rank candidates.</div></div></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Gate log</div><h3>Why orders were sent or skipped</h3></div></div>
+    <pre id="auto-log" class="out">Nothing yet.</pre></div>
+</section>
+
+<!-- ============ HISTORY ============ -->
+<section id="view-history" class="view">
+  <div class="page-head">
+    <div><div class="eyebrow">Audit trail</div><h1>Signal history</h1><p class="muted">A signal is a research candidate, not a completed trade.</p></div>
+    <button id="hist-clear" class="btn ghost">Clear</button>
+  </div>
+  <div id="hist-list" class="list"></div>
+</section>
+
+<!-- ============ LAB ============ -->
+<section id="view-lab" class="view">
+  <div class="page-head">
+    <div><div class="eyebrow">Research workspace</div><h1>Strategy lab</h1><p class="muted">Document methods, lessons and trade observations.</p></div>
+    <button id="lab-new" class="btn primary">New</button>
+  </div>
+  <div class="lab">
+    <div id="lab-list" class="list"></div>
+    <div class="card" id="lab-detail"></div>
+  </div>
+</section>
+
+<!-- ============ RISK ============ -->
+<section id="view-risk" class="view">
+  <div class="page-head"><div><div class="eyebrow">Account protection</div><h1>Risk &amp; mission</h1>
+    <p class="muted">These limits drive the Auto scanner's kill switch and the calculators below.</p></div></div>
+  <form id="risk-form" class="card form">
+    <div class="fields">
+      <label>Starting balance ($)<input id="r-start" type="number" min="1" step="0.01" required></label>
+      <label>Current balance ($) <small>update it yourself</small><input id="r-now" type="number" min="0" step="0.01" required></label>
+      <label>Target balance ($)<input id="r-goal" type="number" min="1" step="0.01" required></label>
+      <label>Deadline<input id="r-deadline" type="datetime-local"></label>
+      <label>Risk per trade (%)<input id="r-risk" type="number" min="0.1" max="5" step="0.1" required></label>
+      <label>Max session loss (%)<input id="r-loss" type="number" min="1" max="50" step="1" required></label>
+      <label>Minimum reward : risk<input id="r-rr" type="number" min="1" max="5" step="0.1" required></label>
+      <label>Jitter floor (efficiency %)<input id="r-eff" type="number" min="5" max="80" step="1" required></label>
+      <label class="check"><input id="r-jit" type="checkbox"> Jitter / noise filter</label>
+      <label class="check"><input id="r-vol" type="checkbox"> Require volume confirmation</label>
+      <label class="check"><input id="r-closed" type="checkbox"> Use closed candles only</label>
+      <label>At target
+        <select id="r-action"><option value="pause">Stop scanning and auto orders</option><option value="notify">Notify only</option></select></label>
+    </div>
+    <button class="btn primary" type="submit">Save</button>
+  </form>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Mission</div><h3 id="m-text">$0 of $0</h3></div><span id="m-state" class="tag">TRACKING</span></div>
+    <div class="bar"><span id="m-bar"></span></div><p id="m-note" class="muted"></p></div>
+  <div class="stats">
+    <div class="stat"><span>Risk per trade</span><b id="k-risk">$0</b></div>
+    <div class="stat"><span>Session loss stop</span><b id="k-stop">$0</b></div>
+    <div class="stat"><span>Balance floor</span><b id="k-floor">$0</b></div>
+    <div class="stat"><span>Kill switch</span><b id="k-kill">OK</b></div>
+  </div>
+  <form id="size-form" class="card form">
+    <div class="card-title"><div><div class="eyebrow">Calculator</div><h3>Position size</h3></div><span class="tag">Illustrative</span></div>
+    <div class="fields">
+      <label>Equity ($)<input id="z-eq" type="number" min="0.01" step="0.01" value="10"></label>
+      <label>Risk (%)<input id="z-risk" type="number" min="0.1" max="5" step="0.1" value="1"></label>
+      <label>Entry price<input id="z-entry" type="number" min="0" step="any" value="100"></label>
+      <label>Stop price<input id="z-stop" type="number" min="0" step="any" value="98.5"></label>
+    </div>
+    <div class="stats">
+      <div class="stat"><span>Risk budget</span><b id="z-cash">$0</b></div>
+      <div class="stat"><span>Units</span><b id="z-units">0</b></div>
+      <div class="stat"><span>Notional</span><b id="z-notional">$0</b></div>
+      <div class="stat"><span>Check</span><b id="z-check">—</b></div>
+    </div>
+    <p class="muted small">Does not know tick value, lot size, leverage, fees or the broker's minimum order. Never paste the result into MT5 as lots.</p>
+  </form>
+</section>
+
+<!-- ============ MARKETS ============ -->
+<section id="view-markets" class="view">
+  <div class="page-head"><div><div class="eyebrow">Choose what to scan</div><h1>Markets</h1><p class="muted">Binance Spot USDT pairs. Tick the ones the scanner should watch (max 20).</p></div>
+    <button id="mk-load" class="btn primary">Load list</button></div>
+  <div class="card form"><div class="fields">
+    <label>Search<input id="mk-search" type="search" placeholder="BTC, ETH, SOL…"></label>
+    <label>Watching<input id="mk-count" readonly></label></div></div>
+  <p id="mk-status" class="status">Not loaded yet. Your current watchlist is used until you change it.</p>
+  <div id="mk-list" class="list"></div>
+</section>
+
+<!-- ============ BROKER ============ -->
+<section id="view-broker" class="view">
+  <div class="page-head"><div><div class="eyebrow">Local backend</div><h1>Broker &amp; execution</h1>
+    <p class="muted">Keys go to your own backend and live in its memory only. Nothing secret is stored in this page.</p></div>
+    <span class="tag warn">Demo first</span></div>
+
+  <div class="card form">
+    <div class="card-title"><div><div class="eyebrow">Step 0</div><h3>Backend</h3></div><span id="be-tag" class="tag">Not checked</span></div>
+    <div class="fields"><label>Backend URL<input id="be-url" type="url" placeholder="http://127.0.0.1:8001"></label></div>
+    <div class="row"><button id="be-test" class="btn">Test backend</button></div>
+  </div>
+
+  <div class="card form">
+    <div class="card-title"><div><div class="eyebrow">Step 1</div><h3>Connect</h3></div></div>
+    <div class="fields">
+      <label>Broker
+        <select id="x-broker"><option value="binance">Binance Spot</option><option value="deriv">Deriv</option><option value="mt5">MetaTrader 5 (Windows)</option></select></label>
+      <label>Account mode
+        <select id="x-mode"><option value="demo">DEMO / TEST</option><option value="live">LIVE (real money)</option></select></label>
+      <label id="x-key-l">API key<input id="x-key" type="password" autocomplete="off"></label>
+      <label id="x-sec-l">API secret<input id="x-secret" type="password" autocomplete="off"></label>
+      <label id="x-app-l" hidden>Deriv App ID<input id="x-app" autocomplete="off"></label>
+    </div>
+    <div class="row"><button id="x-connect" class="btn primary">Connect</button><button id="x-check" class="btn">Check account</button><button id="x-refresh" class="btn ghost">Refresh</button></div>
+    <pre id="x-status" class="out">Not connected.</pre>
+    <pre id="x-account" class="out">Account details appear here.</pre>
+  </div>
+
+  <div class="card form">
+    <div class="card-title"><div><div class="eyebrow">Step 2</div><h3>Arm</h3></div><span class="tag warn">Separate action</span></div>
+    <p class="muted small">Demo: type <b>ARM DEMO</b>. Live: type exactly <b>I UNDERSTAND LIVE TRADING</b>.</p>
+    <div class="fields"><label>Confirmation phrase<input id="x-confirm" autocomplete="off"></label></div>
+    <div class="row"><button id="x-arm" class="btn danger">Arm</button><button id="x-disarm" class="btn">Disarm</button></div>
+    <p class="muted small">Disarming blocks new orders. It does not close open positions.</p>
+  </div>
+
+  <div class="card form">
+    <div class="card-title"><div><div class="eyebrow">Step 3</div><h3>Auto trade</h3></div><span id="au-tag" class="tag">OFF</span></div>
+    <div class="fields">
+      <label class="check"><input id="au-on" type="checkbox"> Enable automatic orders</label>
+      <label>Minimum score<input id="au-score" type="number" min="40" max="100"></label>
+      <label>Max orders per session<input id="au-max" type="number" min="1" max="50"></label>
+      <label class="check"><input id="au-live" type="checkbox"> Allow auto orders on a LIVE account</label>
+    </div>
+    <p class="muted small">Needs: scanner running, account armed, signal symbol equal to the symbol below, kill switch not tripped, and gates from the Auto tab passing. Binance Spot SELL is blocked (spot cannot short) and Binance entries have <b>no automatic stop-loss</b>, so your full stake is at risk on every order.</p>
+  </div>
+
+  <div class="card form">
+    <div class="card-title"><div><div class="eyebrow">Order</div><h3>Symbol &amp; size</h3></div></div>
+    <div class="fields">
+      <label>Symbol<input id="o-symbol"></label>
+      <label>Side<select id="o-side"><option>BUY</option><option>SELL</option></select></label>
+      <label id="o-type-l">Order type<select id="o-type"><option>MARKET</option><option>LIMIT</option></select></label>
+      <label id="o-qty-l"><span id="o-qty-t">Quantity</span><input id="o-qty" type="number" min="0" step="any"></label>
+      <label id="o-price-l">Limit price<input id="o-price" type="number" min="0" step="any"></label>
+      <label id="o-sl-l" hidden>MT5 stop-loss<input id="o-sl" type="number" min="0" step="any"></label>
+      <label id="o-tp-l" hidden>MT5 take-profit<input id="o-tp" type="number" min="0" step="any"></label>
+      <label id="o-dur-l" hidden>Deriv duration<input id="o-dur" type="number" min="1" max="1440" value="5"></label>
+      <label id="o-unit-l" hidden>Unit<select id="o-unit"><option value="m">Minutes</option><option value="t">Ticks</option><option value="s">Seconds</option><option value="h">Hours</option><option value="d">Days</option></select></label>
+      <label id="o-cur-l" hidden>Currency<input id="o-cur" value="USD" maxlength="10"></label>
+      <label id="o-max-l" hidden>Max contract price<input id="o-max" type="number" min="0.01" step="any" value="1"></label>
+    </div>
+    <div class="row"><button id="o-send" class="btn primary">Send test order</button></div>
+    <pre id="o-out" class="out">No order sent. Timeouts do not prove failure: check the broker before retrying.</pre>
+  </div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Backend record</div><h3>Recent orders</h3></div></div><div id="x-history" class="list"><div class="empty">None this session.</div></div></div>
+</section>
+
+<footer>TradeBrain · research tool, not financial advice · export a backup regularly</footer>
+</main>
+
+<nav class="tabbar" aria-label="Sections" id="tabbar">
+  <button data-view="scan" class="active"><b>◎</b>Scan</button>
+  <button data-view="council"><b>⚖</b>Council</button>
+  <button data-view="auto"><b>↻</b>Auto</button>
+  <button data-view="history"><b>≣</b>History</button>
+  <button data-view="lab"><b>✎</b>Lab</button>
+  <button data-view="risk"><b>◔</b>Risk</button>
+  <button data-view="markets"><b>◈</b>Markets</button>
+  <button data-view="broker"><b>⚡</b>Broker</button>
+</nav>
+
+<dialog id="dlg"><form method="dialog" id="dlg-form" class="form">
+  <h3 id="dlg-title">New strategy</h3>
+  <label>Name<input id="dlg-name" required maxlength="100"></label>
+  <label>Source / educator<input id="dlg-src" maxlength="100"></label>
+  <label>Rules and description<textarea id="dlg-desc" rows="4" maxlength="3000"></textarea></label>
+  <div class="row"><button value="cancel" class="btn ghost" formnovalidate>Cancel</button><button value="ok" class="btn primary">Save</button></div>
+</form></dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<div class="backup row">
+  <button id="bk-export" class="btn ghost">Export backup</button>
+  <label class="btn ghost">Import backup<input id="bk-import" type="file" accept="application/json" hidden></label>
+</div>
+
+<script src="./js/indicators.js"></script>
+<script src="./js/scanner.js"></script>
+<script src="./js/council.js"></script>
+<script src="./js/gates.js"></script>
+<script src="./js/store.js"></script>
+<script src="./js/sizing.js"></script>
+<script src="./js/execution.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "appId": "com.tradebrain.web",
+  "appName": "TradeBrain",
+  "webDir": "www",
+  "server": { "androidScheme": "http", "cleartext": true }
+}

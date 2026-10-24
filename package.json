@@ -1,0 +1,17 @@
+{
+  "name": "tradebrain-web",
+  "version": "1.1.0",
+  "private": true,
+  "scripts": {
+    "test": "node tests/core.test.js && node tests/gates.test.js && node tests/sizing.test.js",
+    "serve": "python3 -m http.server 8000",
+    "www": "rm -rf www && mkdir www && cp -r index.html manifest.json sw.js icon.svg css js www/"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2"
+  }
+}
