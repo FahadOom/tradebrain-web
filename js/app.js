@@ -29,12 +29,17 @@
   const review = r => council.review(r, effOpts(), scanner.TF_MS[r.tf] || 9e5);
 
   // ---------- navigation ----------
+  const PRIMARY = ['home', 'charts', 'council', 'auto'];
   function go(view) {
+    if (view === 'more') { $('more-dlg').showModal(); return; }
+    if ($('more-dlg').open) $('more-dlg').close();
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + view));
-    document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+    document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.view === (PRIMARY.includes(view) ? view : 'more')));
     window.scrollTo({ top: 0 });
     if (view === 'broker') TB.exec.refresh();
+    if (TB.ui2) TB.ui2.onView(view);
   }
+  window.TB = window.TB || {}; TB.nav = { go };
 
   // ---------- scanner ----------
   function setStatus(msg, kind) { const el = $('scan-status'); el.textContent = msg; el.className = 'status ' + (kind || ''); }
@@ -56,6 +61,7 @@
         setStatus('Could not load market data. ' + (out.errors[0] || 'Check your connection.'), 'warn');
       }
       scans++; renderQueue();
+      if (TB.ui2) await TB.ui2.onResults(results);
       return results;
     } finally { btn.disabled = false; btn.textContent = 'Scan'; }
   }
@@ -108,6 +114,7 @@
     const nodes = [...r.voters.map(v => card(v, true)), ...r.gates.map(g => { const c = card(g, false); const s = c.querySelector('.sig'); s.textContent = g.verdict; s.className = 'sig ' + (g.verdict === 'PASS' ? 'buy' : 'sell'); return c; })];
     $('co-members').replaceChildren(...nodes);
     $('grok-out').dataset.symbol = cand.symbol;
+    if (TB.ui2) TB.ui2.renderCouncil(cand.symbol);
     toast(`${cand.symbol}: Council says ${r.verdict}`);
   }
 
@@ -124,6 +131,7 @@
 
   // ---------- auto loop ----------
   function renderQueue() {
+    if (TB.ui2 && TB.ui2.renderQueue) return TB.ui2.renderQueue();
     const rows = results.filter(r => r.score >= S().floor && r.signal !== 'WAIT').sort((a, b) => b.score - a.score).slice(0, 10);
     $('lp-cands').textContent = rows.length;
     const q = $('queue'); q.replaceChildren();
@@ -282,7 +290,9 @@
   }
 
   function init() {
-    document.querySelectorAll('#tabbar button').forEach(b => b.addEventListener('click', () => go(b.dataset.view)));
+    document.querySelectorAll('#tabbar button, #more-list button').forEach(b => { if (b.dataset.view) b.addEventListener('click', () => go(b.dataset.view)); });
+    document.addEventListener('click', e => { const t = e.target.closest('[data-go]'); if (t) go(t.dataset.go); });
+    $('more-close').addEventListener('click', () => $('more-dlg').close());
     $('scan-btn').addEventListener('click', runScan);
     $('tf').addEventListener('change', () => { S().tf = $('tf').value; persist(); if (results.length) runScan(); });
     $('council-run').addEventListener('click', runCouncil); $('grok-btn').addEventListener('click', askGrok);
@@ -305,6 +315,8 @@
     $('install-btn').addEventListener('click', async () => { if (deferred) { deferred.prompt(); await deferred.userChoice; deferred = null; $('install-btn').hidden = true; } });
     TB.exec.init({ S, toast, council: review, autoLog, onOrder: n => { $('lp-orders').textContent = n; } });
     try { TB.live.init({ S, toast, council: review, hist: t => toast(t) }); } catch (e) { console.error('live init', e); }
+    TB.app = { runScan, S, persist, toast, results: () => results, startLoop, stopLoop, isLooping: () => !!loop, state, go, setStatus };
+    if (TB.ui2) TB.ui2.init();
     boot();
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});
   }

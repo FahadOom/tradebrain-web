@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b1120">
 <meta name="description" content="TradeBrain: market scanner, Traders Council and guarded execution console.">
-<title>TradeBrain · AI trading workspace</title>
+<title>AI BRAIN ULTIMATE · TradeBrain</title>
 <link rel="manifest" href="./manifest.json">
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="./css/styles.css">
@@ -15,7 +15,7 @@
 <header class="topbar">
   <div class="brand">
     <img src="./icon.svg" alt="" width="34" height="34">
-    <div><strong>TradeBrain</strong><small>Scan · Council · Execute with guardrails</small></div>
+    <div><strong>AI BRAIN ULTIMATE</strong><small>One brain · a council of minds · controlled execution</small></div>
   </div>
   <div class="top-actions">
     <span id="net-pill" class="pill idle"><i></i><span id="net-text">Ready</span></span>
@@ -31,7 +31,7 @@
 <main class="shell">
 
 <!-- ============ SCANNER ============ -->
-<section id="view-scan" class="view active">
+<section id="view-scan" class="view">
   <div class="page-head">
     <div><div class="eyebrow">Live market watch</div><h1>Scanner</h1>
       <p class="muted">EMA 9/21 · RSI · MACD · volume · ATR · jitter filter on closed candles</p></div>
@@ -59,67 +59,102 @@
   </div>
 </section>
 
+
+<!-- ============ HOME ============ -->
+<section id="view-home" class="view active">
+  <div class="page-head"><div><div class="eyebrow">Command centre</div><h1>Overview</h1><p class="muted" id="h-sub">Nothing is running. Start the Auto controller to scan and trade.</p></div><span id="h-mission" class="tag">Ready</span></div>
+  <div class="status-row" id="h-chips"></div>
+  <div class="stats" id="h-stats"></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Mission</div><h3 id="m2-text">—</h3></div><span id="m2-pct" class="tag">0%</span></div><div class="meter big"><span id="m2-bar" style="width:0"></span></div><p id="m2-note" class="muted small"></p></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Open now</div><h3>Positions</h3></div><button class="btn ghost" data-go="positions">All</button></div><div id="h-pos" class="list"></div></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Real events only</div><h3>Activity</h3></div><span class="tag" id="h-feedn">0</span></div><div id="h-feed" class="list feed"></div></div>
+</section>
+
+<!-- ============ CHARTS ============ -->
+<section id="view-charts" class="view">
+  <div class="page-head"><div><div class="eyebrow">Live candles + strategy drawings</div><h1>Charts</h1><p class="muted">Drag to pan, pinch or scroll to zoom, double-tap to reset. Lines are computed from the same candles the Council reads.</p></div></div>
+  <div class="card chartcard"><div class="row between"><div><b id="ch-title">—</b><small id="ch-sub"></small></div><span id="ch-sig" class="sig wait">WAIT</span></div><canvas id="ch-canvas" class="bigchart"></canvas>
+    <div class="row"><button class="btn ghost" id="ch-zin">＋</button><button class="btn ghost" id="ch-zout">－</button><button class="btn ghost" id="ch-reset">Reset</button><button class="btn ghost" id="ch-refresh">Refresh data</button></div></div>
+  <div class="card form"><div class="fields"><label>Market<select id="ch-sym"></select></label><label>Timeframe<select id="ch-tf"><option>1m</option><option>5m</option><option selected>15m</option><option>1h</option></select></label><label>Lower pane<select id="ch-pane"><option value="auto">Auto</option><option value="volume">Volume</option><option value="rsi">RSI</option><option value="macd">MACD</option><option value="none">None</option></select></label></div>
+    <div class="chips2" id="ch-toggles"></div></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Why the chart looks like this</div><h3>Chart read</h3></div></div><div id="ch-read" class="muted small"></div></div>
+</section>
 <!-- ============ COUNCIL ============ -->
 <section id="view-council" class="view">
   <div class="page-head">
     <div><div class="eyebrow">Multi-perspective review</div><h1>Traders Council</h1>
-      <p class="muted">Four voters and two gates, computed from the latest candles. A rule-based reconstruction, not a copy of any named trader.</p></div>
+      <p class="muted">Every member draws its own chart for the selected market with its own strategy lines. Votes are counted by independent family, not by head count.</p></div>
     <button id="council-run" class="btn primary">Review</button>
   </div>
+  <div class="card form"><div class="fields"><label>Market<select id="co-sym"></select></label></div></div>
   <div class="stats">
     <div class="stat"><span>Market</span><b id="co-market">—</b></div>
     <div class="stat"><span>Agree</span><b id="co-agree">—</b></div>
     <div class="stat"><span>Gates</span><b id="co-gates">—</b></div>
     <div class="stat"><span>Verdict</span><b id="co-verdict">WAIT</b></div>
   </div>
-  <div id="co-members" class="grid2"></div>
+  <div class="card" id="co-final"><div class="empty">Run a scan to convene the Council.</div></div>
+  <div id="co-x" class="grid2 members"></div>
+  <div id="co-gx" class="grid2"></div>
+  <details class="card"><summary><b>Original Council (4 voters + 2 gates)</b> <small>exactly as before</small></summary><div id="co-members" class="grid2" style="margin-top:12px"></div></details>
   <div class="card">
-    <div class="card-title"><div><div class="eyebrow">Optional second opinion</div><h3>AI review</h3></div><span class="tag">Your keys · auto failover</span></div>
-    <pre id="grok-out" class="out">Uses the AI key(s) from Connect (Gemini, Groq or Grok; team mode asks both), or your local backend. Results are research notes, never instructions.</pre>
-    <div class="row"><button id="grok-btn" class="btn">Ask the AI about this market</button></div>
+    <div class="card-title"><div><div class="eyebrow">AI Brain coordination</div><h3>Ask the AI about this market</h3></div><span class="tag">Your keys · auto failover</span></div>
+    <pre id="grok-out" class="out">Uses the AI key(s) from Connect (Gemini, Groq or Grok; team mode asks both), or your local backend. Results are research notes, never instructions. The Auto controller uses a stricter structured review.</pre>
+    <div class="row"><button id="grok-btn" class="btn">Free-text opinion</button><button id="brain-btn" class="btn primary">Structured AI decision</button></div>
+    <div id="brain-out" class="out" style="margin-top:8px"></div>
   </div>
 </section>
 
 <!-- ============ AUTO ============ -->
 <section id="view-auto" class="view">
-  <div class="page-head">
-    <div><div class="eyebrow">Continuous scalping</div><h1>Auto scanner</h1>
-      <p class="muted">Repeats the scan, ranks candidates and, only if you enable it in Broker, routes fresh signals to an armed account.</p></div>
-    <span id="loop-tag" class="tag warn">PAUSED</span>
-  </div>
+  <div class="page-head"><div><div class="eyebrow">Continuous scalping controller</div><h1>Auto trading</h1>
+    <p class="muted">Scan, Council, AI Brain, risk engine, order, exit, journal, scan again. Works only while this app is open.</p></div><span id="loop-tag" class="tag warn">PAUSED</span></div>
+  <div class="card warnbox" id="au-banner"></div>
   <div class="card form">
     <div class="fields">
+      <label>Execution<select id="a-exec"><option value="paper">Paper: simulation on live prices (safe)</option><option value="binance">Binance Spot (Connect tab; Testnet or Live)</option></select></label>
+      <label>Mode<select id="a-mode"><option value="normal">NORMAL · flexible, council must agree</option><option value="aplus">A+ · strict checklist</option><option value="mad">MADBOT 😡 · more opportunities, same hard limits</option></select></label>
+      <label>AI Brain policy<select id="a-ai"><option value="required">Required: AI must approve (AI down = no entry)</option><option value="advisory">Advisory: AI is logged, does not block</option><option value="off">Off: deterministic rules only</option></select></label>
+      <label>Position sizing<select id="a-size"><option value="hybrid">Hybrid (default): AI/risk proposes, your cap applies</option><option value="ai">AI sizing: risk budget / stop</option><option value="manual">Manual: exact USDT size</option></select></label>
+      <label>Manual / cap size (USDT, 0 = none)<input id="a-manual" type="number" min="0" step="any"></label>
       <label>Scan every (seconds)<input id="a-interval" type="number" min="15" max="300" step="5"></label>
-      <label>Candidate score floor<input id="a-floor" type="number" min="40" max="95"></label>
-      <label>Mode
-        <select id="a-mode">
-          <option value="normal">NORMAL · council must not oppose</option>
-          <option value="aplus">A+ · score 80+ and 3 voters agree</option>
-          <option value="mad">MAD · floor −10, council ignored</option>
-        </select></label>
-      <label>Re-entry
-        <select id="a-reentry">
-          <option value="fresh">New candle required</option>
-          <option value="cooldown">New candle + 5 min cooldown</option>
-        </select></label>
-      <label>Voters needed to agree<input id="a-cmin" type="number" min="1" max="4"></label>
+      <label>Candidate score floor (display)<input id="a-floor" type="number" min="40" max="95"></label>
+      <label>Re-entry<select id="a-reentry"><option value="fresh">New candle required</option><option value="cooldown">New candle + cooldown</option></select></label>
+      <label>Voters needed (classic council)<input id="a-cmin" type="number" min="1" max="4"></label>
     </div>
-    <div class="row">
-      <button id="loop-start" class="btn primary">Start</button>
-      <button id="loop-stop" class="btn danger" disabled>Pause</button>
-    </div>
+    <details><summary><b>Limits for the selected mode</b> <small>editable; hard risk limits live in the Risk tab and cannot be bypassed</small></summary>
+      <div class="fields" style="margin-top:10px"><label>Min opportunity score<input id="p-score" type="number" min="20" max="100"></label><label>Min agreeing families<input id="p-fam" type="number" min="1" max="5"></label><label>Min conviction (0-1)<input id="p-net" type="number" min="0.05" max="1" step="0.05"></label><label>Max opposing families<input id="p-opp" type="number" min="0" max="4"></label>
+      <label>Max open positions<input id="p-pos" type="number" min="1" max="20"></label><label>Max per instrument<input id="p-sym" type="number" min="1" max="5"></label><label>Max entries / hour<input id="p-hr" type="number" min="1" max="60"></label><label>Re-entry cooldown (min)<input id="p-cd" type="number" min="0" max="240"></label><label>Max holding (min)<input id="p-hold" type="number" min="5" max="2880"></label></div>
+      <div class="fields"><label>Fee per side %<input id="p-fee" type="number" min="0" step="0.01"></label><label>Slippage per side %<input id="p-slip" type="number" min="0" step="0.01"></label><label>Max per-position % of equity<input id="p-ppct" type="number" min="1" max="100"></label><label>Max total exposure % of equity<input id="p-exp" type="number" min="1" max="500"></label><label>Max aggregate planned loss %<input id="p-agg" type="number" min="0.1" max="20" step="0.1"></label><label>Break-even at (R, 0 = off)<input id="p-be" type="number" min="0" step="0.1"></label><label>Trail from (R)<input id="p-trail" type="number" min="0.5" step="0.1"></label><label class="check"><input id="p-inv" type="checkbox"> Exit when the Council flips against the position</label></div>
+      <div class="row"><button id="p-save" class="btn primary">Apply settings</button></div></details>
+    <div class="row"><button id="loop-start" class="btn primary">Start scanning</button><button id="loop-stop" class="btn" disabled>Pause scanning</button></div>
+    <div class="row"><label class="check"><input id="au-trade" type="checkbox"> <b>Place orders automatically</b> (this session only)</label></div>
     <p id="loop-msg" class="status">Paused.</p>
+    <div class="row"><button id="au-stop" class="btn danger big">EMERGENCY STOP</button><button id="au-close" class="btn danger">Close all positions</button><button id="au-resume" class="btn">Clear halt</button><button id="au-recheck" class="btn">Re-check broker</button></div>
   </div>
-  <div class="stats">
-    <div class="stat"><span>Scans</span><b id="lp-count">0</b></div>
-    <div class="stat"><span>Last scan</span><b id="lp-last">—</b></div>
-    <div class="stat"><span>Candidates</span><b id="lp-cands">0</b></div>
-    <div class="stat"><span>Auto orders</span><b id="lp-orders">0</b></div>
-  </div>
-  <div class="card"><div class="card-title"><div><div class="eyebrow">Ranked now</div><h3>Candidate queue</h3></div><span class="tag">Not orders</span></div>
-    <div id="queue" class="list"><div class="empty">Run a scan to rank candidates.</div></div></div>
-  <div class="card"><div class="card-title"><div><div class="eyebrow">Gate log</div><h3>Why orders were sent or skipped</h3></div></div>
-    <pre id="auto-log" class="out">Nothing yet.</pre></div>
+  <div class="stats"><div class="stat"><span>Scans</span><b id="lp-count">0</b></div><div class="stat"><span>Last scan</span><b id="lp-last">—</b></div><div class="stat"><span>Candidates</span><b id="lp-cands">0</b></div><div class="stat"><span>Orders</span><b id="lp-orders">0</b></div></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Last scan</div><h3>Pipeline</h3></div></div><div id="pipe" class="pipe"></div></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Ranked now</div><h3>Candidate queue</h3></div><span class="tag">Not orders</span></div><div id="queue" class="list"><div class="empty">Run a scan to rank candidates.</div></div></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Decision log</div><h3>Why trades were taken or skipped</h3></div></div><div id="decisions" class="list"></div></div>
+  <pre id="auto-log" class="out" hidden>Nothing yet.</pre>
+</section>
+
+<!-- ============ POSITIONS ============ -->
+<section id="view-positions" class="view">
+  <div class="page-head"><div><div class="eyebrow">Controller book</div><h1>Positions &amp; journal</h1><p class="muted" id="pos-sub"></p></div></div>
+  <div class="stats" id="pf-stats"></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Open</div><h3>Positions</h3></div></div><div id="pos-list" class="list"></div></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Equity curve</div><h3>Closed trades</h3></div></div><canvas id="eq-canvas" class="minichart"></canvas><div id="trade-list" class="list" style="margin-top:10px"></div>
+    <div class="row"><button id="j-export" class="btn ghost">Export journal (JSON)</button><button id="j-reset" class="btn ghost">Reset paper account</button></div></div>
+</section>
+
+<!-- ============ BRAIN ============ -->
+<section id="view-brain" class="view">
+  <div class="page-head"><div><div class="eyebrow">Central coordinator</div><h1>AI Brain</h1><p class="muted">Calls only for candidates that already passed the Council and the risk engine. Every answer is schema-validated.</p></div><span id="br-tag" class="tag">—</span></div>
+  <div class="stats" id="br-stats"></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Policy</div><h3 id="br-policy">—</h3></div></div><p class="muted small" id="br-note"></p></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Latest</div><h3>AI decisions</h3></div></div><div id="br-list" class="list"></div></div>
+  <div class="card"><div class="card-title"><div><div class="eyebrow">Weights</div><h3>Council member weights</h3></div></div><p class="muted small">0 switches a member off. Weights are multiplied by how well the member's family suits the current regime. Judge them on results in the journal, not on a hunch.</p><div id="br-weights" class="fields"></div><div class="row"><button id="br-wsave" class="btn primary">Save weights</button></div></div>
 </section>
 
 <!-- ============ HISTORY ============ -->
@@ -270,19 +305,18 @@
   <div class="card"><div class="card-title"><div><div class="eyebrow">Backend record</div><h3>Recent orders</h3></div></div><div id="x-history" class="list"><div class="empty">None this session.</div></div></div>
 </section>
 
-<footer>TradeBrain · research tool, not financial advice · export a backup regularly</footer>
+<footer>AI BRAIN ULTIMATE · research tool, not financial advice · no profit is promised · export a backup regularly</footer>
 </main>
 
 <nav class="tabbar" aria-label="Sections" id="tabbar">
-  <button data-view="scan" class="active"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/></svg></b>Scan</button>
+  <button data-view="home" class="active"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9H4z"/></svg></b>Home</button>
+  <button data-view="charts"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9M10 19V5M15 19v-8M20 19V7"/></svg></b>Charts</button>
   <button data-view="council"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M7 20h10M5 8h14"/><path d="M5 8l-3 7a3.2 3.2 0 006 0zM19 8l-3 7a3.2 3.2 0 006 0z"/></svg></b>Council</button>
   <button data-view="auto"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 10-2.6 5.9M20 5v5h-5"/></svg></b>Auto</button>
-  <button data-view="history"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h9"/></svg></b>History</button>
-  <button data-view="lab"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3h4M11 3v6l-5.5 9.3A2 2 0 007.2 21h9.6a2 2 0 001.7-2.7L13 9V3"/></svg></b>Lab</button>
-  <button data-view="risk"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg></b>Risk</button>
-  <button data-view="markets"><b><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg></b>Markets</button>
-  <button data-view="broker"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L5 14h6l-1 8 8-12h-6z"/></svg></b>Broker</button>
+  <button data-view="more"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg></b>More</button>
 </nav>
+<dialog id="more-dlg" class="sheet"><div class="card" style="margin:0"><div class="card-title"><h3>All sections</h3><button class="btn ghost" id="more-close">Close</button></div><div id="more-list" class="morelist"><button data-view="scan"><b>●</b>Scanner</button><button data-view="positions"><b>●</b>Positions</button><button data-view="brain"><b>●</b>AI Brain</button><button data-view="history"><b>●</b>History</button><button data-view="lab"><b>●</b>Lab</button><button data-view="risk"><b>●</b>Risk</button><button data-view="markets"><b>●</b>Markets</button><button data-view="broker"><b>●</b>Broker</button></div></div></dialog>
+<dialog id="chart-dlg" class="sheet wide"><div class="card" style="margin:0"><div class="card-title"><div><h3 id="cd-title"></h3><small id="cd-sub"></small></div><button class="btn ghost" id="cd-close">Close</button></div><canvas id="cd-canvas" class="bigchart"></canvas><p id="cd-why" class="muted small"></p></div></dialog>
 
 <dialog id="dlg"><form method="dialog" id="dlg-form" class="form">
   <h3 id="dlg-title">New strategy</h3>
@@ -306,6 +340,15 @@
 <script src="./js/sizing.js"></script>
 <script src="./js/execution.js"></script>
 <script src="./js/live.js"></script>
+<script src="./js/strategies.js"></script>
+<script src="./js/councilx.js"></script>
+<script src="./js/risk.js"></script>
+<script src="./js/engine.js"></script>
+<script src="./js/brain.js"></script>
+<script src="./js/executors.js"></script>
+<script src="./js/controller.js"></script>
+<script src="./js/chart.js"></script>
+<script src="./js/ui2.js"></script>
 <script src="./js/app.js"></script>
 </body>
 </html>

@@ -49,7 +49,7 @@
   async function fetchCandles(symbol, tf, closedOnly = true, timeout = 10000) {
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeout);
     try {
-      const url = `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(tf)}&limit=120`;
+      const url = `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(tf)}&limit=200`;
       const res = await fetch(url, { cache: 'no-store', signal: ctl.signal });
       if (!res.ok) throw new Error(`${symbol}: HTTP ${res.status}`);
       const raw = await res.json();

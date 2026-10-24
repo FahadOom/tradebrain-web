@@ -13,6 +13,10 @@
     riskPct: 1, lossPct: 10, minRR: 1.5, minEffPct: 25, jitterOn: true, volumeOn: true, closedOnly: true,
     interval: 30, floor: 60, mode: 'normal', reentry: 'fresh', councilMin: 2,
     autoScore: 75, autoMax: 3, backendUrl: 'http://127.0.0.1:8001',
+    // v8: AI Brain, risk engine, controller
+    sizeMode: 'hybrid', manualUsd: 0, maxRiskPct: 2, maxPosPct: 50, maxAggLossPct: 3, maxExposurePct: 100, maxCorrelated: 2, maxCashRisk: 0,
+    feePct: 0.1, slipPct: 0.05, aiPolicy: 'required', trailOn: true, beAtR: 1, trailAtR: 1.5, trailMult: 1, invalidateExit: true, maxNewPerScan: 2,
+    scalpMin: 3, councilNet: 0.35, executor: 'paper', profiles: {}, weights: {}, enabled: {}, monitorSec: 6, tfView: '15m',
   };
   // Never persisted: switching these on must be a deliberate act in every session.
   const SESSION_ONLY = ['autoOn', 'autoLive'];
@@ -35,6 +39,15 @@
       reentry: oneOf(x.reentry, ['fresh', 'cooldown'], d.reentry), councilMin: Math.round(num(x.councilMin, 1, 4, d.councilMin)),
       autoScore: num(x.autoScore, 40, 100, d.autoScore), autoMax: Math.round(num(x.autoMax, 1, 50, d.autoMax)),
       backendUrl: /^https?:\/\//.test(url) ? url : d.backendUrl,
+      sizeMode: oneOf(x.sizeMode, ['hybrid', 'ai', 'manual'], d.sizeMode), manualUsd: num(x.manualUsd, 0, 1e9, d.manualUsd), maxRiskPct: num(x.maxRiskPct, 0.1, 10, d.maxRiskPct),
+      maxPosPct: num(x.maxPosPct, 1, 100, d.maxPosPct), maxAggLossPct: num(x.maxAggLossPct, 0.1, 20, d.maxAggLossPct), maxExposurePct: num(x.maxExposurePct, 1, 500, d.maxExposurePct),
+      maxCorrelated: Math.round(num(x.maxCorrelated, 1, 10, d.maxCorrelated)), maxCashRisk: num(x.maxCashRisk, 0, 1e9, d.maxCashRisk), feePct: num(x.feePct, 0, 2, d.feePct), slipPct: num(x.slipPct, 0, 2, d.slipPct),
+      aiPolicy: oneOf(x.aiPolicy, ['required', 'advisory', 'off'], d.aiPolicy), trailOn: x.trailOn !== false, beAtR: num(x.beAtR, 0, 5, d.beAtR), trailAtR: num(x.trailAtR, 0.5, 10, d.trailAtR), trailMult: num(x.trailMult, 0.1, 5, d.trailMult),
+      invalidateExit: x.invalidateExit !== false, maxNewPerScan: Math.round(num(x.maxNewPerScan, 1, 10, d.maxNewPerScan)), scalpMin: Math.round(num(x.scalpMin, 2, 3, d.scalpMin)), councilNet: num(x.councilNet, 0.05, 1, d.councilNet),
+      executor: oneOf(x.executor, ['paper', 'binance'], d.executor), monitorSec: Math.round(num(x.monitorSec, 3, 60, d.monitorSec)), tfView: oneOf(x.tfView, ['1m', '5m', '15m', '1h'], d.tfView),
+      profiles: x.profiles && typeof x.profiles === 'object' && !Array.isArray(x.profiles) ? JSON.parse(JSON.stringify(x.profiles)) : {},
+      weights: x.weights && typeof x.weights === 'object' && !Array.isArray(x.weights) ? Object.fromEntries(Object.entries(x.weights).filter(([k, v]) => /^[a-z]+$/.test(k) && Number.isFinite(+v)).map(([k, v]) => [k, num(v, 0, 3, 1)])) : {},
+      enabled: x.enabled && typeof x.enabled === 'object' && !Array.isArray(x.enabled) ? Object.fromEntries(Object.entries(x.enabled).filter(([k]) => /^[a-z]+$/.test(k)).map(([k, v]) => [k, v !== false])) : {},
     };
   }
 

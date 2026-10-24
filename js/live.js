@@ -447,8 +447,8 @@
 <div class="card-title"><div><div class="eyebrow">From the Auto scanner</div><h3>Signal to sign</h3></div></div><div id="c-sig"><div class="empty">Start Auto (with Binance connected) to see signals.</div></div></div>
 <div class="card form"><label class="check"><input id="c-show" type="checkbox"> Show keys while typing</label><label class="check"><input id="c-rem" type="checkbox"> Remember keys on this phone</label><p class="muted small">Stored unencrypted in this app's storage. Never uploaded. Untick to wipe. Use trade-only keys with NO withdrawal permission.</p><div class="row"><button id="c-wipe" class="btn danger">Forget all keys</button></div></div>`;
     document.querySelector('main').insertBefore(sec, document.querySelector('footer'));
-    const b = document.createElement('button'); b.dataset.view = 'connect'; b.innerHTML = `<b>${KEYICON}</b>Connect`; const tb = document.getElementById('tabbar'); tb.insertBefore(b, tb.children[1] || null);
-    const open = () => { document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-connect')); document.querySelectorAll('#tabbar button').forEach(x => x.classList.toggle('active', x === b)); window.scrollTo({ top: 0 }); };
+    const b = document.createElement('button'); b.dataset.view = 'connect'; b.innerHTML = `<b>${KEYICON}</b>Connect`; const tb = document.getElementById('more-list') || document.getElementById('tabbar'); tb.appendChild(b);
+    const open = () => { if (TB.nav) return TB.nav.go('connect'); document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-connect')); window.scrollTo({ top: 0 }); };
     b.onclick = open;
     const card = document.createElement('div'); card.className = 'card cta'; card.innerHTML = `<div><b>Keys &amp; balance</b><p class="muted small">Deriv, Binance and the AI keys connect here · build v7.1</p></div><button id="c-go" class="btn primary">Open Connect</button>`; document.getElementById('view-scan').prepend(card); $('c-go').onclick = open;
     document.querySelectorAll('#conn-strip .chip').forEach(c => { c.onclick = open; });
@@ -469,5 +469,5 @@
     if (ld.bOk) { say('c-b-out', 'Saved key ' + mask(ld.bKey) + '. Tap Connect to refresh the balance.'); chip('binance', 'warn', 'Saved · tap to refresh'); }
   }
   function init(c) { ctx = c; ctx.hist = c.hist || (() => {}); build(); }
-  window.TB = window.TB || {}; window.TB.live = { init, onScan, ask, hasAI, _t: { aiTest, setLd: v => { ld = v; }, rankModels, callSlot, teamRun, hmacHex, verdictOf, clean, bHint } };
+  window.TB = window.TB || {}; window.TB.live = { init, onScan, ask, askJson: (p, sy) => askFailover(p, sy), hasAI, binance: { ready: () => !!ld.bOk, isTest: () => !!ld.bTest, base: () => bBase(), call: (m, p, q) => bCall(m, p, q), pub: async p => { const r = await tfetch(bBase() + p, {}, 15000), j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.msg || 'Binance HTTP ' + r.status); return j; } }, _t: { aiTest, setLd: v => { ld = v; }, rankModels, callSlot, teamRun, hmacHex, verdictOf, clean, bHint } };
 })();
