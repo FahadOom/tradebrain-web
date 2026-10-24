@@ -125,3 +125,5 @@ dialog::backdrop { background: rgba(3, 7, 15, .7); }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 footer { text-align: center; color: var(--muted); font-size: .75rem; padding: 14px 0 6px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+[hidden] { display: none !important; }

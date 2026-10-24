@@ -1,5 +1,5 @@
 /* TradeBrain service worker: app shell works offline; market and broker calls are never cached. */
-const CACHE = 'tradebrain-v3';
+const CACHE = 'tradebrain-v4';
 const SHELL = ['./', './index.html', './css/styles.css', './js/indicators.js', './js/scanner.js', './js/council.js', './js/gates.js', './js/store.js', './js/sizing.js', './js/execution.js', './js/live.js', './js/app.js', './manifest.json', './icon.svg'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(k => Promise.all(k.filter(x => x !== CACHE).map(x => caches.delete(x))))); self.clients.claim(); });

@@ -134,7 +134,7 @@
 <div class="card-title"><div><div class="eyebrow">From the Auto scanner</div><h3>Signal to sign</h3></div></div><div id="c-sig"><div class="empty">Start Auto (with Binance connected) to see signals.</div></div></div>
 <div class="card form"><label class="check"><input id="c-rem" type="checkbox"> Remember keys on this phone</label><p class="muted small">Stored unencrypted in this app's storage. Never uploaded. Untick to wipe. Use trade-only keys with NO withdrawal permission.</p><div class="row"><button id="c-wipe" class="btn danger">Forget all keys</button></div></div>`;
     document.querySelector('main').insertBefore(sec, document.querySelector('footer'));
-    const b = document.createElement('button'); b.dataset.view = 'connect'; b.innerHTML = '<b>🔑</b>Connect'; document.getElementById('tabbar').append(b);
+    const b = document.createElement('button'); b.dataset.view = 'connect'; b.innerHTML = '<b>🔑</b>Connect'; const tb = document.getElementById('tabbar'); tb.insertBefore(b, tb.children[1] || null);
     b.onclick = () => { document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-connect')); document.querySelectorAll('#tabbar button').forEach(x => x.classList.toggle('active', x === b)); window.scrollTo({ top: 0 }); };
     $('c-rem').checked = !!ld.remember; $('c-bm').value = ld.bTest === false ? 'live' : 'test';
     $('c-ai-go').onclick = aiTest; $('c-d-go').onclick = dConnect; $('c-dq').onclick = dQuote; $('c-dsign').onclick = dSign;
