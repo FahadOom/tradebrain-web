@@ -119,7 +119,7 @@
       if (TB.live.hasAI()) { $('grok-out').textContent = await TB.live.ask(`Signal ${cand.signal} on ${cand.symbol} ${cand.tf}, score ${cand.score}, mode ${S().mode}. Evidence: ${(cand.reasons || []).join('; ')}`); return; }
       const d = await TB.exec.api('/api/grok/coordinate', { method: 'POST', body: JSON.stringify({ symbol: cand.symbol, timeframe: cand.tf, signal: cand.signal, score: cand.score, evidence: cand.reasons, conflicts: [], mode: S().mode }) });
       const a = d.assessment || {}; $('grok-out').textContent = `${a.model || 'model'} · ${a.key_slot || ''}\n\n${a.text || 'No text returned.'}`;
-    } catch (e) { $('grok-out').textContent = 'Grok unavailable: ' + e.message; }
+    } catch (e) { $('grok-out').textContent = 'AI unavailable: ' + e.message; }
   }
 
   // ---------- auto loop ----------

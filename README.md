@@ -24,6 +24,12 @@ Auto trade and "allow on LIVE" are never saved. Live arming needs the exact phra
 
 The app talks to the backend at `http://127.0.0.1:8001`, so run the backend in Termux (`backend/README.md`) while using the broker console. Auto orders on Binance use hybrid sizing: risk % of balance / stop distance, capped by the size in the order box.
 
+## v7 changes
+- Binance: clear reason and fix shown when the connection fails, plus a Diagnose button (also tests whether the key belongs to Testnet or Live). Signing works even over plain http.
+- Keys stay in the boxes after pasting and are remembered by default (tick "Show keys while typing" to see them).
+- AI: correct model chosen per provider (Groq no longer picks a tiny-quota model), max_tokens always sent, other models tried when one is limited.
+- AI team mode: two keys (for example Gemini + Groq) answer together; only agreement counts. Optional AI gate on the Auto signal button.
+
 ## v6 changes
 - Deriv: new `pat_` tokens use REST + one-time socket; old tokens use the classic socket. **Diagnose** button tests each step. Backend adapter supports both too.
 - Grok: two key slots (primary + backup) with automatic failover on daily/rate limits, optional load sharing, per-key call counter, AI review of each signal.
