@@ -136,6 +136,7 @@
     document.querySelector('main').insertBefore(sec, document.querySelector('footer'));
     const b = document.createElement('button'); b.dataset.view = 'connect'; b.innerHTML = '<b>🔑</b>Connect'; const tb = document.getElementById('tabbar'); tb.insertBefore(b, tb.children[1] || null);
     b.onclick = () => { document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-connect')); document.querySelectorAll('#tabbar button').forEach(x => x.classList.toggle('active', x === b)); window.scrollTo({ top: 0 }); };
+    const card = document.createElement('div'); card.className = 'card'; card.innerHTML = '<button id="c-go" class="btn primary">🔑 Connect keys &amp; balance</button> <span class="muted small">build v4</span>'; document.getElementById('view-scan').prepend(card); $('c-go').onclick = () => b.click();
     $('c-rem').checked = !!ld.remember; $('c-bm').value = ld.bTest === false ? 'live' : 'test';
     $('c-ai-go').onclick = aiTest; $('c-d-go').onclick = dConnect; $('c-dq').onclick = dQuote; $('c-dsign').onclick = dSign;
     $('c-b-go').onclick = bConnect; $('c-bb').onclick = () => bManual('BUY'); $('c-bsl').onclick = () => bManual('SELL');
