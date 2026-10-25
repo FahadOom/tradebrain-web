@@ -37,7 +37,7 @@
       <p class="muted">EMA 9/21 · RSI · MACD · volume · ATR · jitter filter on closed candles</p></div>
     <div class="row">
       <select id="tf" aria-label="Timeframe">
-        <option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option>
+        <option value="1m">1m</option><option value="5m">5m</option><option value="15m" selected>15m</option><option value="30m">30m</option><option value="1h">1h</option><option value="4h">4h</option>
       </select>
       <button id="scan-btn" class="btn primary">Scan</button>
     </div>
@@ -65,6 +65,8 @@
   <div class="page-head"><div><div class="eyebrow">Command centre</div><h1>Overview</h1><p class="muted" id="h-sub">Nothing is running. Start the Auto controller to scan and trade.</p></div><span id="h-mission" class="tag">Ready</span></div>
   <div class="status-row" id="h-chips"></div>
   <div class="stats" id="h-stats"></div>
+  <div id="h-brokers"></div>
+  <div id="h-goal"></div>
   <div class="card"><div class="card-title"><div><div class="eyebrow">Mission</div><h3 id="m2-text">—</h3></div><span id="m2-pct" class="tag">0%</span></div><div class="meter big"><span id="m2-bar" style="width:0"></span></div><p id="m2-note" class="muted small"></p></div>
   <div class="card"><div class="card-title"><div><div class="eyebrow">Open now</div><h3>Positions</h3></div><button class="btn ghost" data-go="positions">All</button></div><div id="h-pos" class="list"></div></div>
   <div class="card"><div class="card-title"><div><div class="eyebrow">Real events only</div><h3>Activity</h3></div><span class="tag" id="h-feedn">0</span></div><div id="h-feed" class="list feed"></div></div>
@@ -75,7 +77,7 @@
   <div class="page-head"><div><div class="eyebrow">Live candles + strategy drawings</div><h1>Charts</h1><p class="muted">Drag to pan, pinch or scroll to zoom, double-tap to reset. Lines are computed from the same candles the Council reads.</p></div></div>
   <div class="card chartcard"><div class="row between"><div><b id="ch-title">—</b><small id="ch-sub"></small></div><span id="ch-sig" class="sig wait">WAIT</span></div><canvas id="ch-canvas" class="bigchart"></canvas>
     <div class="row"><button class="btn ghost" id="ch-zin">＋</button><button class="btn ghost" id="ch-zout">－</button><button class="btn ghost" id="ch-reset">Reset</button><button class="btn ghost" id="ch-refresh">Refresh data</button></div></div>
-  <div class="card form"><div class="fields"><label>Market<select id="ch-sym"></select></label><label>Timeframe<select id="ch-tf"><option>1m</option><option>5m</option><option selected>15m</option><option>1h</option></select></label><label>Lower pane<select id="ch-pane"><option value="auto">Auto</option><option value="volume">Volume</option><option value="rsi">RSI</option><option value="macd">MACD</option><option value="none">None</option></select></label></div>
+  <div class="card form"><div class="fields"><label>Market<select id="ch-sym"></select></label><label>Timeframe<select id="ch-tf"><option>1m</option><option>5m</option><option selected>15m</option><option>30m</option><option>1h</option><option>4h</option></select></label><label>Lower pane<select id="ch-pane"><option value="auto">Auto</option><option value="volume">Volume</option><option value="rsi">RSI</option><option value="macd">MACD</option><option value="none">None</option></select></label></div>
     <div class="chips2" id="ch-toggles"></div></div>
   <div class="card"><div class="card-title"><div><div class="eyebrow">Why the chart looks like this</div><h3>Chart read</h3></div></div><div id="ch-read" class="muted small"></div></div>
 </section>
@@ -112,7 +114,7 @@
   <div class="card warnbox" id="au-banner"></div>
   <div class="card form">
     <div class="fields">
-      <label>Execution<select id="a-exec"><option value="paper">Paper: simulation on live prices (safe)</option><option value="binance">Binance Spot (Connect tab; Testnet or Live)</option></select></label>
+      <label>Execution<select id="a-exec"><option value="paper">Paper: simulation on live prices (safe)</option><option value="binance">Binance Spot (Connect tab; Demo Trading, Testnet or Live)</option><option value="deriv">Deriv multipliers (Connect tab; demo or real account, long and short)</option></select></label>
       <label>Mode<select id="a-mode"><option value="normal">NORMAL · flexible, council must agree</option><option value="aplus">A+ · strict checklist</option><option value="mad">MADBOT 😡 · more opportunities, same hard limits</option></select></label>
       <label>AI Brain policy<select id="a-ai"><option value="required">Required: AI must approve (AI down = no entry)</option><option value="advisory">Advisory: AI is logged, does not block</option><option value="off">Off: deterministic rules only</option></select></label>
       <label>Position sizing<select id="a-size"><option value="hybrid">Hybrid (default): AI/risk proposes, your cap applies</option><option value="ai">AI sizing: risk budget / stop</option><option value="manual">Manual: exact USDT size</option></select></label>
@@ -228,8 +230,8 @@
 
 <!-- ============ MARKETS ============ -->
 <section id="view-markets" class="view">
-  <div class="page-head"><div><div class="eyebrow">Choose what to scan</div><h1>Markets</h1><p class="muted">Binance Spot USDT pairs. Tick the ones the scanner should watch (max 20).</p></div>
-    <button id="mk-load" class="btn primary">Load list</button></div>
+  <div class="page-head"><div><div class="eyebrow">Choose what to scan</div><h1>Markets</h1><p class="muted">Every market of the connected broker (Deriv when both are connected). Tick the ones the scanner should watch.</p></div>
+    <div class="row"><button id="mk-load" class="btn primary">Load list</button><button id="mk-all" class="btn">Watch all open</button></div></div>
   <div class="card form"><div class="fields">
     <label>Search<input id="mk-search" type="search" placeholder="BTC, ETH, SOL…"></label>
     <label>Watching<input id="mk-count" readonly></label></div></div>
@@ -315,7 +317,7 @@
   <button data-view="auto"><b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 10-2.6 5.9M20 5v5h-5"/></svg></b>Auto</button>
   <button data-view="more"><b><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></svg></b>More</button>
 </nav>
-<dialog id="more-dlg" class="sheet"><div class="card" style="margin:0"><div class="card-title"><h3>All sections</h3><button class="btn ghost" id="more-close">Close</button></div><div id="more-list" class="morelist"><button data-view="scan"><b>●</b>Scanner</button><button data-view="positions"><b>●</b>Positions</button><button data-view="brain"><b>●</b>AI Brain</button><button data-view="history"><b>●</b>History</button><button data-view="lab"><b>●</b>Lab</button><button data-view="risk"><b>●</b>Risk</button><button data-view="markets"><b>●</b>Markets</button><button data-view="broker"><b>●</b>Broker</button></div></div></dialog>
+<dialog id="more-dlg" class="sheet"><div class="card" style="margin:0"><div class="card-title"><h3>All sections</h3><button class="btn ghost" id="more-close">Close</button></div><div id="more-list" class="morelist"><button data-view="scan"><b>●</b>Scanner</button><button data-view="positions"><b>●</b>Positions</button><button data-view="brain"><b>●</b>AI Brain</button><button data-view="history"><b>●</b>History</button><button data-view="lab"><b>●</b>Lab</button><button data-view="risk"><b>●</b>Risk</button><button data-view="signals"><b>●</b>Signals</button><button data-view="tests"><b>●</b>Tests</button><button data-view="markets"><b>●</b>Markets</button><button data-view="broker"><b>●</b>Broker</button></div></div></dialog>
 <dialog id="chart-dlg" class="sheet wide"><div class="card" style="margin:0"><div class="card-title"><div><h3 id="cd-title"></h3><small id="cd-sub"></small></div><button class="btn ghost" id="cd-close">Close</button></div><canvas id="cd-canvas" class="bigchart"></canvas><p id="cd-why" class="muted small"></p></div></dialog>
 
 <dialog id="dlg"><form method="dialog" id="dlg-form" class="form">
@@ -340,15 +342,20 @@
 <script src="./js/sizing.js"></script>
 <script src="./js/execution.js"></script>
 <script src="./js/live.js"></script>
+<script src="./js/datasource.js"></script>
+<script src="./js/keepalive.js"></script>
 <script src="./js/strategies.js"></script>
 <script src="./js/councilx.js"></script>
 <script src="./js/risk.js"></script>
 <script src="./js/engine.js"></script>
 <script src="./js/brain.js"></script>
+<script src="./js/scout.js"></script>
+<script src="./js/backtest.js"></script>
 <script src="./js/executors.js"></script>
 <script src="./js/controller.js"></script>
 <script src="./js/chart.js"></script>
 <script src="./js/ui2.js"></script>
+<script src="./js/ui3.js"></script>
 <script src="./js/app.js"></script>
 </body>
 </html>

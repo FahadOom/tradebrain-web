@@ -14,7 +14,7 @@
 
   const SCHEMA_DOC = '{"instrument":"<same symbol>","direction":"BUY|SELL|WAIT","decision":"APPROVE|REJECT|WAIT","strategy":"<lead strategy>","market_regime":"<string>",' +
     '"proposed_entry":number,"proposed_stop_loss":number,"proposed_take_profit":number,"reward_to_risk":number,"supporting_evidence":["..."],"conflicting_evidence":["..."],' +
-    '"council_result":"BUY|SELL|WAIT","confidence":0-100,"reasons_to_reject":["..."],"invalidation":["conditions that void the setup"],"size_comment":"optional string"}';
+    '"council_result":"BUY|SELL|WAIT","confidence":0-100,"reasons_to_reject":["..."],"invalidation":["conditions that void the setup"],"size_comment":"optional string","size_factor":0.25-1,"max_entries":1-3}';
 
   /** The packet is built the same way for every candidate. Numbers are rounded so identical evidence hashes identically. */
   function packet(c) {
@@ -32,7 +32,9 @@
     };
   }
   const prompt = c => `Evidence packet:\n${JSON.stringify(packet(c))}\n\nReturn exactly this JSON shape:\n${SCHEMA_DOC}\n` +
-    'Rules: APPROVE only if the evidence supports the proposed direction and the plan is sound; otherwise REJECT with reasons. You may propose a different stop/target only if it keeps reward_to_risk >= the minimum.';
+    'Rules: APPROVE only if the evidence supports the proposed direction and the plan is sound; otherwise REJECT with reasons. You may propose a different stop/target only if it keeps reward_to_risk >= the minimum. ' +
+    'size_factor scales the position by the nature of the market (1 = full planned size for a clean, orderly setup; 0.25-0.6 for choppy, fast or uncertain markets); you can only reduce size, never increase it. ' +
+    'max_entries is how many separate entries this market deserves right now (1 for a single shot, up to 3 for a clean trend where adding on strength is sensible).';
 
   /** Pull the first JSON object out of a model reply (handles ```json fences and chatter). */
   function extractJson(text) {
@@ -78,7 +80,40 @@
     }
     if (errors.length) return { ok: false, errors };
     return { ok: true, errors: [], decision: { decision: obj.decision, direction: obj.direction, confidence: Math.round(obj.confidence), strategy: obj.strategy, regime: obj.market_regime || c.regime,
-      support: obj.supporting_evidence, conflicts: obj.conflicting_evidence, rejects: obj.reasons_to_reject, invalidation: obj.invalidation, plan: adj, sizeComment: obj.size_comment || '' } };
+      support: obj.supporting_evidence, conflicts: obj.conflicting_evidence, rejects: obj.reasons_to_reject, invalidation: obj.invalidation, plan: adj, sizeComment: obj.size_comment || '',
+      sizeFactor: num('size_factor') != null ? Math.min(1, Math.max(0.25, obj.size_factor)) : null, entries: num('max_entries') != null ? Math.min(3, Math.max(1, Math.round(obj.max_entries))) : null } };
+  }
+
+  /* ---------- supervision of an OPEN position (A+ trades are long-term; the AI keeps watching) ---------- */
+  const SUP_SYSTEM = 'You supervise an open trade for a trading app. You see the position and fresh, deterministic market evidence. You do NOT place orders; the app executes your advice only as an exit or a tighter stop. ' +
+    'Exit early only when the evidence shows the market is changing against the trade (trend/momentum fading, structure broken, regime turning abnormal). Do not exit on noise. Reply with ONE JSON object only (no markdown).';
+  const SUP_SCHEMA = '{"instrument":"<same symbol>","action":"HOLD|TIGHTEN|EXIT","confidence":0-100,"reasons":["..."],"market_changing":true|false}';
+  function supPacket(x) {
+    const r = v => (v == null || !Number.isFinite(v) ? null : +Number(v).toPrecision(7)), c = x.cand;
+    return { instrument: x.pos.symbol, side: x.pos.side, entry: r(x.pos.entry), price: r(x.price), stop: r(x.pos.stop), tp1: r(x.pos.tp1), tp2: r(x.pos.target), tp1_reached: !!x.pos.tp1Hit, progress_r: r(x.progressR), minutes_open: Math.round(x.minutes),
+      now: c ? { council_side: c.side, council_net: r(c.council.net), agreeing_families: c.council.agreeFamilies, opposing_families: c.council.opposeFamilies, regime: c.regime, rsi: r(c.rsi), efficiency: r(c.eff), atr: r(c.atr), main_strategy: c.main,
+        members: (c.council.members || []).map(m => ({ name: m.name, verdict: m.verdict })) } : null, weakening_signs: x.signs || [] };
+  }
+  function validateSup(o, pos) {
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return { ok: false, errors: ['Reply is not a JSON object.'] };
+    const errors = [];
+    if (String(o.instrument || '').toUpperCase() !== String(pos.symbol).toUpperCase()) errors.push(`instrument is "${o.instrument}", expected ${pos.symbol}.`);
+    if (!['HOLD', 'TIGHTEN', 'EXIT'].includes(o.action)) errors.push('action must be HOLD, TIGHTEN or EXIT.');
+    if (!(typeof o.confidence === 'number' && o.confidence >= 0 && o.confidence <= 100)) errors.push('confidence must be 0-100.');
+    if (!Array.isArray(o.reasons) || !o.reasons.every(x => typeof x === 'string')) errors.push('reasons must be an array of strings.');
+    else if (o.action === 'EXIT' && !o.reasons.length) errors.push('EXIT needs at least one reason.');
+    return errors.length ? { ok: false, errors } : { ok: true, errors: [], action: o.action, confidence: Math.round(o.confidence), reasons: o.reasons, changing: !!o.market_changing };
+  }
+
+  /* ---------- MADBOT scout: pick promising markets for aggressive scalping out of a broker-wide sweep ---------- */
+  const SCOUT_SYSTEM = 'You are the market scout of a scalping app. You receive a compact table of markets from ONE broker, computed from recent candles. Pick the markets that look most promising for short-term scalping right now ' +
+    '(clear direction or clean momentum, enough range to cover costs, not choppy). You do NOT place orders. Reply with ONE JSON object only (no markdown).';
+  const SCOUT_SCHEMA = '{"picks":[{"symbol":"<exactly as listed>","bias":"BUY|SELL|WAIT","why":"short reason"}],"note":"one sentence"}';
+  function validateScout(o, symbols, top) {
+    if (!o || typeof o !== 'object' || !Array.isArray(o.picks)) return { ok: false, errors: ['Reply has no picks array.'] };
+    const set = new Set(symbols), seen = new Set(), picks = [];
+    o.picks.forEach(p => { if (p && set.has(p.symbol) && !seen.has(p.symbol)) { seen.add(p.symbol); picks.push({ symbol: p.symbol, bias: ['BUY', 'SELL', 'WAIT'].includes(p.bias) ? p.bias : 'WAIT', why: String(p.why || '').slice(0, 160) }); } });
+    return picks.length ? { ok: true, errors: [], picks: picks.slice(0, top), note: String(o.note || '').slice(0, 200) } : { ok: false, errors: ['None of the picked symbols are in the list.'] };
   }
 
   /** Create a brain bound to an `ask(prompt, system) -> Promise<text>` function. */
@@ -109,6 +144,34 @@
       inflight.set(k, p); return p;
     }
 
+    const gateCall = () => { while (calls.length && now() - calls[0] > 60e3) calls.shift(); if (calls.length >= (cfg.maxPerMin || 6)) return 'Rate limit: ' + (cfg.maxPerMin || 6) + ' AI requests per minute.'; if (!cfg.available()) return 'No AI key is connected.'; calls.push(now()); stats.requests++; return null; };
+    const sup = new Map();
+    /** Ask the AI whether an open position should be held, tightened or closed. One answer per position per candle. */
+    async function supervise(x) {
+      const k = `${x.pos.id}|${x.cand ? x.cand.time : 0}`, hit = sup.get(k); if (hit) return { ...hit, cached: true };
+      const lim = gateCall(); if (lim) return { ok: false, status: 'unavailable', errors: [lim] };
+      let text, last = [];
+      for (let a = 0; a < 2; a++) {
+        try { text = await cfg.ask(`Open position and fresh evidence:\n${JSON.stringify(supPacket(x))}\n\nReturn exactly this JSON shape:\n${SUP_SCHEMA}\n` + (a ? 'Your previous reply was not valid: ' + last.join(' ') + ' Reply with the JSON object only.' : ''), SUP_SYSTEM); }
+        catch (e) { stats.errors++; stats.lastError = e.message; return { ok: false, status: 'unavailable', errors: ['AI request failed: ' + e.message] }; }
+        const v = validateSup(extractJson(text), x.pos); if (v.ok) { stats.lastOkAt = now(); const out = { status: 'ok', ...v }; sup.set(k, out); if (sup.size > 300) sup.delete(sup.keys().next().value); return out; }
+        last = v.errors; stats.invalid++;
+      }
+      return { ok: false, status: 'invalid', errors: last };
+    }
+    /** table: [{symbol, group, price, signal, score, trend, rsi, eff, atrPct, ...}] */
+    async function scout(table, top) {
+      const lim = gateCall(); if (lim) return { ok: false, status: 'unavailable', errors: [lim] };
+      const symbols = table.map(t => t.symbol); let text, last = [];
+      for (let a = 0; a < 2; a++) {
+        try { text = await cfg.ask(`Markets (one per row):\n${JSON.stringify(table)}\n\nPick the best ${top} for scalping now. Return exactly this JSON shape:\n${SCOUT_SCHEMA}\n` + (a ? 'Your previous reply was not valid: ' + last.join(' ') : ''), SCOUT_SYSTEM); }
+        catch (e) { stats.errors++; stats.lastError = e.message; return { ok: false, status: 'unavailable', errors: ['AI request failed: ' + e.message] }; }
+        const v = validateScout(extractJson(text), symbols, top); if (v.ok) { stats.lastOkAt = now(); return { status: 'ok', ...v }; }
+        last = v.errors; stats.invalid++;
+      }
+      return { ok: false, status: 'invalid', errors: last };
+    }
+
     /** Apply the execution policy to a review. Returns { allow, reason, plan }. */
     function gate(rv, policy) {
       if (policy === 'off') return { allow: true, reason: 'AI policy is Off: deterministic rules only.', plan: null };
@@ -120,8 +183,8 @@
       if (d.decision === 'APPROVE') return { allow: true, reason: `AI approved (confidence ${d.confidence}, a judgement not a probability).`, plan: d.plan };
       return policy === 'advisory' ? { allow: true, reason: `AI said ${d.decision} (advisory only): ${(d.rejects || []).join('; ')}`, plan: null } : { allow: false, reason: `AI ${d.decision}: ${(d.rejects || []).join('; ') || 'no reason given'}`, plan: null };
     }
-    return { review, gate, stats, cache, calls: () => calls.length };
+    return { review, gate, supervise, scout, stats, cache, calls: () => calls.length };
   }
 
-  return { create, packet, prompt, validate, extractJson, SYSTEM, SCHEMA_DOC };
+  return { create, packet, prompt, validate, validateSup, validateScout, extractJson, SYSTEM, SCHEMA_DOC };
 });

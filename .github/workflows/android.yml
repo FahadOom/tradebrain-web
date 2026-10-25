@@ -17,8 +17,16 @@ jobs:
       - run: npm run www
       - run: npx cap add android
       - run: npx cap sync android
-      - name: Build debug APK
-        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Add background keep-alive (foreground service) and build debug APK
+        run: |
+          # The keep-alive service lets the app keep scanning when you switch to another app.
+          # If that native part ever fails to compile, fall back to a plain build so you still get an APK.
+          bash native/inject.sh
+          if ! (cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon); then
+            echo "::warning::Keep-alive build failed; building without it."
+            rm -rf android && npx cap add android && npx cap sync android
+            cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: tradebrain-apk

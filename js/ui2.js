@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
-  let app, ctl, brainI, paperEx, binEx, S, lastEval = {}, charts = [], mainChart = null, dlgChart = null, renderT = null, monT = null, sym = { chart: null, council: null };
+  let app, ctl, brainI, paperEx, binEx, derivEx, S, lastEval = {}, charts = [], mainChart = null, dlgChart = null, renderT = null, monT = null, sym = { chart: null, council: null };
   const KEY = 'tradebrain:ctrl:v1';
   const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const money = (v, sign) => (sign && v > 0 ? '+' : v < 0 ? '−' : '') + '$' + Math.abs(Number(v) || 0).toFixed(Math.abs(v) < 1 ? 3 : 2);
@@ -12,15 +12,19 @@
   const tfMs = tf => TB.scanner.TF_MS[tf] || 9e5;
   const hhmm = t => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const effS = () => ({ ...S(), minEff: S().minEffPct / 100 });
+  const isReal = () => { const n = ctl.executor.info.name; return n === 'deriv' ? (TB.live.deriv.acct() || {}).demo === false : n === 'binance' ? !TB.live.binance.isTest() : false; };
+  const envLabel = () => { const n = ctl.executor.info.name; return n === 'deriv' ? `Deriv ${isReal() ? 'REAL' : 'DEMO'}` : n === 'binance' ? `Binance ${TB.live.binance.envName()}` : 'Paper'; };
   const profileOf = () => TB.engine.profile(S(), S().mode);
   const activeView = () => (document.querySelector('.view.active') || {}).id || '';
 
   /* ---------------- setup ---------------- */
   function init() {
     app = TB.app; S = app.S;
-    const prices = async symbols => { const d = await (await fetch('https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent(JSON.stringify(symbols)), { cache: 'no-store' })).json(); const o = {}; d.forEach(x => { o[x.symbol] = +x.price; }); return o; };
+    const prices = async symbols => TB.data.prices(symbols);
     paperEx = TB.executors.paper({ balance: S().start, fees: () => ({ feePct: S().feePct, slipPct: S().slipPct }), prices });
     binEx = TB.executors.binance({ api: TB.live.binance });
+    derivEx = TB.executors.deriv({ api: TB.live.deriv, prices });
+    binEx.accountId = () => TB.live.binance.env(); derivEx.accountId = () => (TB.live.deriv.acct() || {}).id || '';
     brainI = TB.brain.create({ ask: (p, sy) => TB.live.askJson(p, sy), available: () => TB.live.hasAI(), maxPerMin: 6 });
     ctl = TB.controller.create({ S, executor: paperEx, brain: brainI, tfMs, now: () => Date.now(), persist: savePersist, emit: () => schedule() });
     try { const snap = JSON.parse(localStorage.getItem(KEY) || 'null'); if (snap) ctl.restore(snap); } catch (e) { /* ignore corrupt snapshot */ }
@@ -28,7 +32,7 @@
     $('a-exec').value = 'paper'; $('a-ai').value = S().aiPolicy; $('a-size').value = S().sizeMode; $('a-manual').value = S().manualUsd; $('au-trade').checked = false;
     fillProfile();
     bind(); schedule();
-    clearInterval(monT); monT = setInterval(() => { if (ctl.st.positions.length) ctl.monitor().then(schedule).catch(() => {}); }, Math.max(3, S().monitorSec) * 1000);
+    if (monT && monT.stop) monT.stop(); monT = TB.bg.every(() => { if (ctl.st.positions.length) ctl.monitor().then(schedule).catch(() => {}); }, Math.max(3, S().monitorSec) * 1000);
     setInterval(() => { if (/home|positions/.test(activeView())) schedule(); }, 15000);
   }
   function savePersist() { try { localStorage.setItem(KEY, JSON.stringify(ctl.snapshot())); } catch (e) { /* storage full */ } }
@@ -38,17 +42,19 @@
     $('a-exec').addEventListener('change', e => {
       const want = e.target.value;
       if (want === 'binance' && !TB.live.binance.ready()) { e.target.value = 'paper'; return app.toast('Connect Binance in the Connect tab first.'); }
-      const r = ctl.setExecutor(want === 'binance' ? binEx : paperEx); if (!r.ok) { e.target.value = ctl.executor.info.name; return app.toast(r.why); }
+      if (want === 'deriv' && !TB.live.deriv.ready()) { e.target.value = 'paper'; return app.toast('Connect Deriv in the Connect tab first.'); }
+      const r = ctl.setExecutor(want === 'binance' ? binEx : want === 'deriv' ? derivEx : paperEx); if (!r.ok) { e.target.value = ctl.executor.info.name; return app.toast(r.why); }
       S().executor = want; $('au-trade').checked = false; ctl.setEnabled(false); app.persist(); schedule();
     });
     ['a-ai', 'a-size', 'a-manual'].forEach(id => $(id).addEventListener('change', () => { S().aiPolicy = $('a-ai').value; S().sizeMode = $('a-size').value; S().manualUsd = Math.max(0, +$('a-manual').value || 0); app.persist(); schedule(); }));
     $('a-mode').addEventListener('change', () => { S().mode = $('a-mode').value; fillProfile(); app.persist(); schedule(); });
     $('p-save').addEventListener('click', saveProfile);
     $('au-trade').addEventListener('change', e => {
+      if (e.target.checked && !TB.data.ready()) { e.target.checked = false; return app.toast('Connect Deriv or Binance first: the bot trades only the markets of a connected broker.'); }
       if (e.target.checked) {
         const ex = ctl.executor.info;
-        if (ex.live && !TB.live.binance.isTest()) { const t = prompt('LIVE Binance account. Real money. Type LIVE to allow automatic orders for this session only:'); if (t !== 'LIVE') { e.target.checked = false; return app.toast('Not enabled.'); } }
-        if (ex.live && !confirm(`Automatic ${S().mode.toUpperCase()} orders on Binance ${TB.live.binance.isTest() ? 'TESTNET' : 'LIVE'}. Exits are watched by this app only (no exchange stop-loss). Keep the app open. Continue?`)) { e.target.checked = false; return; }
+        const real = isReal(); if (real) { const t = prompt(`REAL ${ex.name === 'deriv' ? 'Deriv' : 'Binance'} account. Real money. Type LIVE to allow automatic orders for this session only:`); if (t !== 'LIVE') { e.target.checked = false; return app.toast('Not enabled.'); } }
+        if (ex.live && !confirm(`Automatic ${S().mode.toUpperCase()} orders on ${envLabel()}. ${ex.name === 'deriv' ? 'Deriv holds the stop-loss and take-profit; this app also supervises and can close early.' : 'Exits are watched by this app only (no exchange stop-loss).'} Keep the app running (Auto tab has the background switch). Continue?`)) { e.target.checked = false; return; }
         if (!app.isLooping()) app.startLoop();
       }
       ctl.setEnabled(e.target.checked); schedule();
@@ -96,7 +102,7 @@
     const cand = TB.engine.evaluate(r, effS(), { tfMs: tfMs(tf), portfolio: { open: [], maxCorrelated: S().maxCorrelated } });
     return (lastEval[key] = { t: Date.now(), cand, candles, a });
   }
-  const symbols = () => { const w = S().watch.slice(); app.results().forEach(r => { if (!w.includes(r.symbol)) w.push(r.symbol); }); return w; };
+  const symbols = () => { if (!TB.data.ready()) return []; const w = TB.data.getWatch(S()).slice(); app.results().forEach(r => { if (!w.includes(r.symbol)) w.push(r.symbol); }); return w; };
   function fillSelect(el, key) { const cur = sym[key] || el.value || symbols()[0], list = symbols(); if (el.options.length !== list.length || el.dataset.k !== list.join()) { el.innerHTML = list.map(s => `<option>${esc(s)}</option>`).join(''); el.dataset.k = list.join(); } el.value = list.includes(cur) ? cur : list[0]; sym[key] = el.value; }
 
   /* ---------------- charts ---------------- */
@@ -136,7 +142,8 @@
   /* ---------------- council ---------------- */
   async function renderCouncil(symbol) {
     fillSelect($('co-sym'), 'council'); if (symbol) { sym.council = symbol; $('co-sym').value = symbol; }
-    const tf = S().tf; let e;
+    const tf = app.tf(); let e;
+    if (!TB.data.ready()) { $('co-final').innerHTML = '<div class="empty">Connect Deriv or Binance first. The Council reviews markets of the connected broker.</div>'; $('co-x').innerHTML = ''; $('co-gx').innerHTML = ''; return; }
     try { e = await evalSymbol(sym.council, tf, false); } catch (er) { $('co-final').innerHTML = `<div class="empty">Could not load ${esc(sym.council)}: ${esc(er.message)}</div>`; return; }
     const { cand, candles } = e, c = cand.council;
     $('co-market').textContent = cand.symbol; $('co-agree').textContent = `${c.agreeFamilies}/${c.families.length}`; $('co-gates').textContent = c.gatesOk ? 'PASS' : 'BLOCK'; $('co-verdict').textContent = c.verdict; $('co-verdict').className = c.verdict === 'BUY' ? 'up' : c.verdict === 'SELL' ? 'down' : '';
@@ -152,17 +159,12 @@
     $('co-final').innerHTML = `<div class="card-title"><div><div class="eyebrow">Final recommendation</div><h3>${sig(c.verdict)} ${esc(cand.symbol)} <small style="display:inline">· ${esc(cand.regime)} · score ${cand.score}/100</small></h3></div></div>` +
       `<p class="small">${c.families.map(f => `<span class="tag ${f.verdict === 'BUY' ? 'ok' : f.verdict === 'SELL' ? 'bad' : ''}">${esc(f.family)} ${esc(f.verdict)}</span>`).join(' ')}</p>` +
       (c.conflicts.length ? `<p class="small"><b>Conflicts:</b> ${esc(c.conflicts.join(' '))}</p>` : '') + (c.missing.length ? `<p class="small muted"><b>Missing confirmation:</b> ${esc(c.missing.join('; '))}.</p>` : '') +
-      `<p class="small"><b>Risk engine (dry run):</b> ${esc(riskTxt)}</p>` + (ap ? `<details><summary class="small"><b>A+ checklist:</b> ${ap.pass ? 'PASS' : 'not met'}</summary><div class="small">${ap.checks.map(k => `<div>${k.ok ? '✓' : '✗'} ${esc(k.name)} <span class="muted">${esc(k.note)}</span></div>`).join('')}</div></details>` : '') +
+      `<p class="small"><b>Scalp trigger:</b> ${esc(cand.trig ? (cand.trig.ok ? 'READY · ' : 'watching · ') + cand.trig.why : '—')}</p>` + `<p class="small"><b>Risk engine (dry run):</b> ${esc(riskTxt)}</p>` + (ap ? `<details><summary class="small"><b>A+ checklist:</b> ${ap.pass ? 'PASS' : 'not met'}</summary><div class="small">${ap.checks.map(k => `<div>${k.ok ? '✓' : '✗'} ${esc(k.name)} <span class="muted">${esc(k.note)}</span></div>`).join('')}</div></details>` : '') +
       `<p class="small"><b>AI Brain:</b> ${cached && cached[1].v.ok ? esc(cached[1].v.decision.decision + ' · confidence ' + cached[1].v.decision.confidence + ' (a judgement, not a probability)') : 'No structured review for this candle yet.'}</p>`;
-    charts.forEach(ch => ch.destroy()); charts = [];
-    const card = (m, i) => `<article class="card member"><div class="card-title"><div><h3>${esc(m.name)} ${m.original ? '<span class="tag">original</span>' : ''}</h3><small>${esc(m.role)}</small></div>${sig(m.verdict)}</div><canvas class="minichart" data-m="${i}"></canvas><p class="muted small">${esc(m.why)}</p><p class="small muted">family ${esc(m.family)} · weight ${m.weight.toFixed(2)} × regime fit ${m.fit.toFixed(2)} · score ${m.score}</p></article>`;
+    charts = [];
+    const card = (m, i) => `<article class="card member"><div class="card-title"><div><h3>${esc(m.name)} ${m.original ? '<span class="tag">original</span>' : ''}</h3><small>${esc(m.role)}</small></div>${sig(m.verdict)}</div><p class="muted small">${esc(m.why)}</p><p class="small muted">family ${esc(m.family)} · weight ${m.weight.toFixed(2)} × regime fit ${m.fit.toFixed(2)} · score ${m.score}</p></article>`;
     $('co-x').innerHTML = c.members.map(card).join('');
     $('co-gx').innerHTML = c.gates.map(g => `<article class="card member"><div class="card-title"><div><h3>${esc(g.name)} gate ${g.original ? '<span class="tag">original</span>' : ''}</h3><small>${esc(g.role)}</small></div>${sig(g.verdict === 'PASS' ? 'BUY' : 'SELL').replace(/>(BUY|SELL)</, '>' + g.verdict + '<')}</div><p class="muted small">${esc(g.why)}</p></article>`).join('');
-    document.querySelectorAll('#co-x canvas').forEach(cv => {
-      const m = c.members[+cv.dataset.m], ov = m.overlays.map(o => ({ ...o, group: m.id })), pos = m.verdict !== 'WAIT' && m.plan ? [{ side: m.verdict, i: candles.length - 1, entry: m.plan.entry, stop: m.plan.stop, target: m.plan.target }] : [];
-      const ch = TB.chart.create(cv, { mini: true, visible: 60 }); ch.set({ candles, overlays: ov, pane: m.pane, positions: pos, title: `${cand.symbol} ${m.verdict}`, tfMs: tfMs(cand.tf) }); charts.push(ch);
-      cv.addEventListener('dblclick', () => { }); cv.addEventListener('click', () => openBig(m, cand, candles, ov, pos));
-    });
     // classic summary cards keep working through app.js
   }
   function openBig(m, cand, candles, ov, pos) {
@@ -172,7 +174,7 @@
   }
   const aiInput = (cand, plan) => ({ symbol: cand.symbol, tf: cand.tf, time: cand.time, side: cand.side, mode: S().mode, price: cand.price, regime: cand.regime, atr: cand.atr, ema21: cand.ema21, rsi: cand.rsi, eff: cand.eff, vol: cand.vol, plan: plan || cand.plan, score: cand.score, council: cand.council, aplus: cand.aplus, equity: ctl.st.account.equity || S().now, openPositions: ctl.st.positions.length, openSymbols: ctl.st.positions.map(p => p.symbol), dayPnl: ctl.st.account.dayPnl || 0, riskPct: S().riskPct, minRR: S().minRR, longOnly: ctl.executor.info.longOnly, executor: ctl.executor.info.name });
   async function structuredAI() {
-    const out = $('brain-out'); const e = lastEval[sym.council + '|' + S().tf]; if (!e) return app.toast('Pick a market first.');
+    const out = $('brain-out'); const e = lastEval[sym.council + '|' + app.tf()]; if (!e) return app.toast('Pick a market first.');
     if (e.cand.side === 'WAIT') { out.textContent = 'The Council sees no direction to review (WAIT).'; return; }
     out.textContent = 'Asking the AI Brain…'; const rv = await brainI.review(aiInput(e.cand));
     out.innerHTML = rv.ok ? `<b>${esc(rv.decision.decision)}</b> · confidence ${rv.decision.confidence} (judgement, not a probability)${rv.cached ? ' · cached' : ''}<br>Support: ${esc(rv.decision.support.join('; '))}<br>Conflicts: ${esc(rv.decision.conflicts.join('; ') || 'none')}<br>Rejects: ${esc(rv.decision.rejects.join('; ') || 'none')}<br>Invalidated if: ${esc(rv.decision.invalidation.join('; '))}` : `Not usable (${esc(rv.status)}): ${esc(rv.errors.join(' '))}`;
@@ -190,22 +192,23 @@
     const card = (l, v, c) => `<div class="stat"><span>${l}</span><b class="${c || ''}">${v}</b></div>`;
     $('h-stats').innerHTML = card('Balance', money(ex.live ? a.cash : paperEx.balance)) + card('Equity', money(eq)) + card('Today realised', money(P.today, true), P.today > 0 ? 'up' : P.today < 0 ? 'down' : '') + card('Unrealised', money(P.unreal, true), P.unreal > 0 ? 'up' : P.unreal < 0 ? 'down' : '') +
       card('Open positions', ctl.st.positions.length) + card('Win rate', P.st.n ? Math.round(P.st.winRate * 100) + '%' : '—') + card('Profit factor', P.st.n ? (P.st.pf === Infinity ? '∞' : P.st.pf.toFixed(2)) : '—') + card('Max drawdown', money(P.st.maxDD)) + card('Exposure', money(P.expo)) + card('Daily risk left', money(left));
-    const span = Math.max(0.01, S().goal - S().start), pct = Math.max(0, Math.min(100, (eq - S().start) / span * 100));
-    $('m2-text').textContent = `${money(eq)} of ${money(S().goal)} target (start ${money(S().start)})`; $('m2-bar').style.width = pct + '%'; $('m2-pct').textContent = pct.toFixed(0) + '%';
+    const span = Math.max(0.01, S().goal - S().start), pct = S().goal > 0 ? Math.max(0, Math.min(100, (eq - S().start) / span * 100)) : 0;
+    $('m2-text').textContent = S().goal > 0 ? `${money(eq)} of ${money(S().goal)} target (start ${money(S().start)})` : `${money(eq)} · no target set yet (start ${money(S().start)})`; $('m2-bar').style.width = pct + '%'; $('m2-pct').textContent = pct.toFixed(0) + '%';
     $('m2-note').textContent = `Status: ${status}. ${S().deadline ? 'Deadline ' + new Date(S().deadline).toLocaleString() + '. ' : ''}The target is a goal, never a promise and never a reason to force trades. Realised and unrealised P/L are shown separately above.`;
+    if (TB.ui3) TB.ui3.home();
     $('h-pos').innerHTML = ctl.st.positions.length ? ctl.st.positions.map(posRow).join('') : '<div class="empty">No open positions.</div>';
     $('h-feed').innerHTML = ctl.st.feed.length ? ctl.st.feed.slice(0, 25).map(f => `<div class="item feeditem ${f.level}"><small>${hhmm(f.t)} · ${esc(f.type)}</small><div class="small">${esc(f.text)}</div></div>`).join('') : '<div class="empty">No activity yet. Events appear here only when something really happens.</div>'; $('h-feedn').textContent = ctl.st.feed.length;
   }
-  const posRow = p => `<div class="item"><div class="row between"><div><b>${esc(p.symbol)}</b> ${sig(p.side)} <small style="display:inline">${esc(p.mode.toUpperCase())} · ${esc(p.strategy || '')}</small></div><b class="${p.upnl >= 0 ? 'up' : 'down'}">${money(p.upnl, true)}</b></div><div class="chips"><span>Entry <b>${fmt(p.entry)}</b></span><span>Now <b>${fmt(p.mark)}</b></span><span>Stop <b>${fmt(p.stop)}</b>${p.trailing ? ' (trailing)' : p.beDone ? ' (break-even)' : ''}</span><span>Target <b>${fmt(p.target)}</b></span><span>Qty <b>${p.qty}</b></span><span>Status <b>${esc(p.status)}</b></span></div></div>`;
+  const posRow = p => `<div class="item"><div class="row between"><div><b>${esc(p.symbol)}</b> ${sig(p.side)} <small style="display:inline">${esc(p.mode.toUpperCase())} · ${esc(p.strategy || '')}</small></div><b class="${p.upnl >= 0 ? 'up' : 'down'}">${money(p.upnl, true)}</b></div><div class="chips"><span>Entry <b>${fmt(p.entry)}</b></span><span>Now <b>${fmt(p.mark)}</b></span><span>Stop <b>${fmt(p.stop)}</b>${p.trailing ? ' (trailing)' : p.beDone ? ' (break-even)' : ''}</span><span>Target <b>${fmt(p.target)}</b></span><span>Qty <b>${p.qty}</b></span><span>Status <b>${esc(p.status)}</b></span>${p.tp1 ? `<span>TP1 <b>${fmt(p.tp1)}</b>${p.tp1Hit ? ' ✓' : ''}</span>` : ''}</div>${p.watch ? `<p class="muted small">AI watch (${esc(p.watch.by)}): ${esc(p.watch.action)}${p.watch.signs && p.watch.signs.length ? ' · signs: ' + esc(p.watch.signs.join('; ')) : ''}${p.watch.reasons && p.watch.reasons.length ? ' · ' + esc(p.watch.reasons[0]) : ''}</p>` : ''}</div>`;
 
   function renderQueue() {
     const q = $('queue'); if (!q) return; const rows = ctl.st.cands.filter(c => c.side !== 'WAIT' && c.score >= S().floor).slice(0, 10); $('lp-cands').textContent = rows.length;
     q.innerHTML = rows.length ? rows.map(c => { const k = TB.engine.qualifies(c, S(), S().mode); return `<div class="item row between"><div><b>${esc(c.symbol)} · ${sig(c.side)}</b><p class="muted small">${esc(c.regime)} · ${c.council.agreeFamilies} families agree · ${esc(k.ok ? 'qualifies for ' + S().mode.toUpperCase() : k.why)}</p></div><span class="tag ${k.ok ? 'ok' : ''}">${c.score}/100</span></div>`; }).join('') : '<div class="empty">No candidates meet the score floor. That is normal; do not force trades.</div>';
   }
   function renderAuto() {
-    const ex = ctl.executor.info, halt = ctl.haltReason(), live = ex.live && !TB.live.binance.isTest();
+    const ex = ctl.executor.info, halt = ctl.haltReason(), live = isReal();
     $('au-banner').className = 'card warnbox ' + (live ? 'live' : ex.live ? 'test' : 'sim');
-    $('au-banner').innerHTML = `<b>${live ? 'LIVE MONEY' : ex.live ? 'Binance TESTNET' : 'PAPER: simulation'}</b> · ${esc(ex.label)}. ${ex.live ? 'Orders are real market orders. This app watches stop-loss and take-profit itself (Binance Spot has no automatic stop here), so it must stay open and online. Spot cannot short.' : 'Orders are simulated with realistic fees and slippage on live public prices. No broker is touched.'}${halt ? `<br><b>Entries blocked:</b> ${esc(halt)}` : ''}`;
+    $('au-banner').innerHTML = `<b>${live ? 'REAL MONEY' : ex.live ? envLabel() + ' (demo money)' : 'PAPER: simulation'}</b> · ${esc(ex.label)}. ${ex.live ? 'Orders are real market orders. This app watches stop-loss and take-profit itself (Binance Spot has no automatic stop here), so it must stay open and online. Spot cannot short.' : 'Orders are simulated with realistic fees and slippage on live public prices. No broker is touched.'}${halt ? `<br><b>Entries blocked:</b> ${esc(halt)}` : ''}`;
     $('loop-tag').textContent = app.isLooping() ? (ctl.st.enabled ? 'TRADING' : 'SCANNING') : 'PAUSED'; $('loop-tag').className = 'tag ' + (app.isLooping() ? (ctl.st.enabled ? 'bad' : 'ok') : 'warn'); $('lp-orders').textContent = ctl.st.orders;
     const p = ctl.st.pipeline || {}; const stage = (l, v) => `<div class="stage"><b>${v == null ? '—' : v}</b><span>${l}</span></div>`;
     $('pipe').innerHTML = p.at ? stage('Markets scanned', p.scanned) + stage('Directional', p.directional) + stage('Qualified', p.qualified) + stage('Risk OK', p.riskOk) + stage('AI reviewed', p.aiReviewed) + stage('AI approved', p.aiApproved) + stage('Executed', p.executed) + `<small class="wide">${hhmm(p.at)}${ctl.st.enabled ? '' : ' · orders are OFF, so stages after Directional stay at 0'}</small>` : '<div class="empty">No scan yet.</div>';
@@ -246,7 +249,7 @@
     const v = activeView();
     if (v === 'view-home') renderHome(); if (v === 'view-auto') renderAuto(); if (v === 'view-positions') renderPositions(); if (v === 'view-brain') renderBrain();
     if (v !== 'view-home') { /* keep clock-free views cheap */ }
-    const a = ctl.st.account; if (a.known && a.equity > 0 && Math.abs(a.equity - S().now) > 0.004 && !ctl.executor.info.live) { S().now = +a.equity.toFixed(2); app.persist(); }
+    const a = ctl.st.account; if (a.known && a.equity > 0 && Math.abs(a.equity - S().now) > 0.004) { S().now = +a.equity.toFixed(2); app.persist(); }
   }
   async function onResults(results) {
     await ctl.onScan(results);
@@ -255,10 +258,13 @@
     if (activeView() === 'view-charts') loadChart(false);
     if (ctl.st.needRescan && app.isLooping()) setTimeout(() => app.runScan().catch(() => {}), 1500);
   }
+  function openChart(symbol) { sym.chart = symbol; app.go('charts'); }
+  function openCouncil(symbol) { sym.council = symbol; app.go('council'); }
   function onView(view) {
+    if (TB.ui3) TB.ui3.onView(view);
     if (view === 'charts') loadChart(false); if (view === 'council') renderCouncil(sym.council); renderAll(); if (view === 'home') renderHome();
   }
 
   window.TB = window.TB || {};
-  TB.ui2 = { init, onResults, onView, renderCouncil, renderQueue };
+  TB.ui2 = { init, openChart, openCouncil, onResults, onView, renderCouncil, renderQueue, evalSymbol, execName: () => (ctl ? ctl.executor.info.name : 'paper'), isReal, envLabel, paper: () => paperEx, ctl: () => ctl };
 })();

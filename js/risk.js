@@ -24,7 +24,7 @@
       if (qty > capQty + 1e-12) return { ok: false, why: `Manual size is above the ${maxPosPct}% per-position cap. Not changed silently.` };
     } else {
       qty = riskCash / stopDist;
-      if (mode === 'ai' && x.aiScale > 0) qty *= Math.min(1, x.aiScale);          // AI may only scale DOWN
+      if ((mode === 'ai' || mode === 'hybrid') && x.aiScale > 0) qty *= Math.min(1, x.aiScale);          // AI may only scale DOWN, by the nature of the market; manual mode ignores it
       if (mode === 'hybrid' && x.manualNotional > 0) qty = Math.min(qty, x.manualNotional / price);   // your cap
       qty = Math.min(qty, capQty);
     }

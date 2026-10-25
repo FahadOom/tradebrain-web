@@ -1,9 +1,9 @@
 {
   "name": "tradebrain-web",
-  "version": "8.0.0",
+  "version": "9.0.0",
   "private": true,
   "scripts": {
-    "test": "node tests/core.test.js && node tests/gates.test.js && node tests/sizing.test.js && node tests/engine.test.js",
+    "test": "node tests/core.test.js && node tests/gates.test.js && node tests/sizing.test.js && node tests/engine.test.js && node tests/v9.test.js",
     "serve": "python3 -m http.server 8000",
     "www": "rm -rf www && mkdir www && cp -r index.html manifest.json sw.js icon.svg css js www/"
   },

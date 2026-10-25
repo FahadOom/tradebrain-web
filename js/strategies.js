@@ -96,7 +96,7 @@
 
   const res = (id, name, verdict, score, why, p, overlays, pane) => ({ id, name, family: FAMILY[id], verdict, score: Math.round(clamp(score, 0, 100)), why, plan: verdict === 'WAIT' ? null : p, overlays: overlays || [], pane: pane || null });
   const ser = (values, color, label, width, dash) => ({ type: 'series', values, color, label, width: width || 1.4, dash });
-  const volPane = x => ({ kind: 'bars', label: 'Volume', values: x.candles.map(c => c.v), colors: x.candles.map(c => (c.c >= c.o ? 'rgba(86,214,176,.55)' : 'rgba(255,126,140,.55)')) });
+  const volPane = x => x.candles.every(c => c.v == null) ? null : ({ kind: 'bars', label: 'Volume', values: x.candles.map(c => c.v), colors: x.candles.map(c => (c.c >= c.o ? 'rgba(86,214,176,.55)' : 'rgba(255,126,140,.55)')) });
   const rsiPane = x => ({ kind: 'line', label: 'RSI 14', values: x.rsiS, levels: [30, 50, 70], min: 0, max: 100, color: C.violet });
   const macdPane = x => ({ kind: 'hist', label: 'MACD histogram', values: x.macdH, levels: [0] });
   const minEffFor = (x, id) => { const b = x.s.minEff || 0.25; return ({ trend: b * 1.2, momentum: b, scalper: b, breakout: b * 0.6, retest: b * 0.6, priceaction: b * 0.5 })[id] ?? b; };

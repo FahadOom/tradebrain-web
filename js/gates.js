@@ -18,7 +18,7 @@
   function killSwitch(S) {
     const floor = S.start * (1 - S.lossPct / 100);
     if (S.now <= floor) return `Session loss limit hit (balance $${S.now.toFixed(2)} ≤ $${floor.toFixed(2)}).`;
-    if (S.now >= S.goal && S.action === 'pause') return `Target reached ($${S.now.toFixed(2)} ≥ $${S.goal.toFixed(2)}).`;
+    if (S.goal > 0 && S.now >= S.goal && S.action === 'pause') return `Target reached ($${S.now.toFixed(2)} ≥ $${S.goal.toFixed(2)}).`;
     return null;
   }
 

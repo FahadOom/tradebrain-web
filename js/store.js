@@ -8,15 +8,17 @@
   const KEY = 'tradebrain:v1', LEGACY = ['ai-brain-v2', 'ai-brain-ultimate-v1'];
 
   const DEFAULTS = {
-    tf: '15m', watch: ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT'],
-    start: 10, now: 10, goal: 30, deadline: '', action: 'pause',
+    tf: '15m', watch: ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'DOGEUSDT'], watchD: [], sourcePref: 'auto',
+    start: 10, now: 10, goal: 0, goalSet: false, paperSeeded: false, deadline: '', action: 'pause',
     riskPct: 1, lossPct: 10, minRR: 1.5, minEffPct: 25, jitterOn: true, volumeOn: true, closedOnly: true,
     interval: 30, floor: 60, mode: 'normal', reentry: 'fresh', councilMin: 2,
     autoScore: 75, autoMax: 3, backendUrl: 'http://127.0.0.1:8001',
     // v8: AI Brain, risk engine, controller
     sizeMode: 'hybrid', manualUsd: 0, maxRiskPct: 2, maxPosPct: 50, maxAggLossPct: 3, maxExposurePct: 100, maxCorrelated: 2, maxCashRisk: 0,
     feePct: 0.1, slipPct: 0.05, aiPolicy: 'required', trailOn: true, beAtR: 1, trailAtR: 1.5, trailMult: 1, invalidateExit: true, maxNewPerScan: 2,
-    scalpMin: 3, councilNet: 0.35, executor: 'paper', profiles: {}, weights: {}, enabled: {}, monitorSec: 6, tfView: '15m',
+    scalpMin: 3, councilNet: 0.35,
+    // v9: per-mode timeframes, scalp trigger, AI supervision, MADBOT scout
+    tfA: '1h', tfMad: '5m', minVoters: 2, aiWatch: 'aplus', tp1R: 1, madScout: true, madBackup: true, madTop: 6, sweepMax: 40, scoutMin: 5, executor: 'paper', profiles: {}, weights: {}, enabled: {}, monitorSec: 6, tfView: '15m',
   };
   // Never persisted: switching these on must be a deliberate act in every session.
   const SESSION_ONLY = ['autoOn', 'autoLive'];
@@ -28,10 +30,12 @@
   function clean(x = {}) {
     const d = DEFAULTS;
     const watch = Array.isArray(x.watch) ? x.watch.map(s => String(s).toUpperCase()).filter(s => /^[A-Z0-9]{5,20}$/.test(s)).slice(0, 20) : d.watch;
+    const watchD = Array.isArray(x.watchD) ? [...new Set(x.watchD.map(s => String(s).trim()).filter(s => /^[A-Za-z0-9_.-]{2,30}$/.test(s)))].slice(0, 40) : d.watchD;
+    const TFS = ['1m', '5m', '15m', '30m', '1h', '4h'];
     const url = String(x.backendUrl || d.backendUrl).trim().replace(/\/$/, '');
     return {
-      tf: oneOf(x.tf, ['1m', '5m', '15m', '1h'], d.tf), watch: watch.length ? watch : d.watch,
-      start: num(x.start, 0.01, 1e9, d.start), now: num(x.now, 0, 1e9, d.now), goal: num(x.goal, 0.02, 1e9, d.goal),
+      tf: oneOf(x.tf, TFS, d.tf), watch: watch.length ? watch : d.watch, watchD, sourcePref: oneOf(x.sourcePref, ['auto', 'deriv', 'binance'], d.sourcePref),
+      start: num(x.start, 0.01, 1e9, d.start), now: num(x.now, 0, 1e9, d.now), goal: num(x.goal, 0, 1e9, d.goal), goalSet: x.goalSet === true, paperSeeded: x.paperSeeded === true,
       deadline: typeof x.deadline === 'string' ? x.deadline : '', action: oneOf(x.action, ['pause', 'notify'], d.action),
       riskPct: num(x.riskPct, 0.1, 5, d.riskPct), lossPct: num(x.lossPct, 1, 50, d.lossPct), minRR: num(x.minRR, 1, 5, d.minRR),
       minEffPct: num(x.minEffPct, 5, 80, d.minEffPct), jitterOn: x.jitterOn !== false, volumeOn: x.volumeOn !== false, closedOnly: x.closedOnly !== false,
@@ -44,7 +48,9 @@
       maxCorrelated: Math.round(num(x.maxCorrelated, 1, 10, d.maxCorrelated)), maxCashRisk: num(x.maxCashRisk, 0, 1e9, d.maxCashRisk), feePct: num(x.feePct, 0, 2, d.feePct), slipPct: num(x.slipPct, 0, 2, d.slipPct),
       aiPolicy: oneOf(x.aiPolicy, ['required', 'advisory', 'off'], d.aiPolicy), trailOn: x.trailOn !== false, beAtR: num(x.beAtR, 0, 5, d.beAtR), trailAtR: num(x.trailAtR, 0.5, 10, d.trailAtR), trailMult: num(x.trailMult, 0.1, 5, d.trailMult),
       invalidateExit: x.invalidateExit !== false, maxNewPerScan: Math.round(num(x.maxNewPerScan, 1, 10, d.maxNewPerScan)), scalpMin: Math.round(num(x.scalpMin, 2, 3, d.scalpMin)), councilNet: num(x.councilNet, 0.05, 1, d.councilNet),
-      executor: oneOf(x.executor, ['paper', 'binance'], d.executor), monitorSec: Math.round(num(x.monitorSec, 3, 60, d.monitorSec)), tfView: oneOf(x.tfView, ['1m', '5m', '15m', '1h'], d.tfView),
+      tfA: oneOf(x.tfA, TFS, d.tfA), tfMad: oneOf(x.tfMad, TFS, d.tfMad), minVoters: Math.round(num(x.minVoters, 1, 4, d.minVoters)), aiWatch: oneOf(x.aiWatch, ['aplus', 'all', 'off'], d.aiWatch), tp1R: num(x.tp1R, 0.5, 5, d.tp1R),
+      madScout: x.madScout !== false, madBackup: x.madBackup !== false, madTop: Math.round(num(x.madTop, 1, 15, d.madTop)), sweepMax: Math.round(num(x.sweepMax, 5, 120, d.sweepMax)), scoutMin: Math.round(num(x.scoutMin, 1, 60, d.scoutMin)),
+      executor: oneOf(x.executor, ['paper', 'binance', 'deriv'], d.executor), monitorSec: Math.round(num(x.monitorSec, 3, 60, d.monitorSec)), tfView: oneOf(x.tfView, TFS, d.tfView),
       profiles: x.profiles && typeof x.profiles === 'object' && !Array.isArray(x.profiles) ? JSON.parse(JSON.stringify(x.profiles)) : {},
       weights: x.weights && typeof x.weights === 'object' && !Array.isArray(x.weights) ? Object.fromEntries(Object.entries(x.weights).filter(([k, v]) => /^[a-z]+$/.test(k) && Number.isFinite(+v)).map(([k, v]) => [k, num(v, 0, 3, 1)])) : {},
       enabled: x.enabled && typeof x.enabled === 'object' && !Array.isArray(x.enabled) ? Object.fromEntries(Object.entries(x.enabled).filter(([k]) => /^[a-z]+$/.test(k)).map(([k, v]) => [k, v !== false])) : {},

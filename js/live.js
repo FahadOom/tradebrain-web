@@ -12,7 +12,7 @@
   const mask = k => k ? k.slice(0, 4) + '••••' + k.slice(-3) : '';
   const say = (id, t) => { const e = $(id); if (e) e.textContent = t; };
   const hhmm = ms => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const chip = (id, cls, text) => { const e = $('cs-' + id); if (!e) return; e.className = 'chip ' + cls; const v = e.querySelector('em'); if (v) v.textContent = text; };
+  const chip = (id, cls, text) => { const e = $('cs-' + id); if (e) { e.className = 'chip ' + cls; const v = e.querySelector('em'); if (v) v.textContent = text; } try { window.dispatchEvent(new Event('tb-conn')); } catch (x) {} };
   const tfetch = async (url, o = {}, ms = 20000) => {
     const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
     try { return await fetch(url, { ...o, signal: c.signal }); }
@@ -249,7 +249,7 @@
   async function dPick(id) {
     const a = (ld.dAccts || []).find(x => x.id === id) || { id, demo: /^VR|^DEM/i.test(id) };
     ld.dAcct = { id: a.id, demo: a.demo, bal: null, cur: a.cur || 'USD' }; if (dws) { try { dws.close(); } catch (e) {} } dws = null;
-    const b = await dSend({ balance: 1 }); ld.dAcct.bal = b.balance.balance; ld.dAcct.cur = b.balance.currency || ld.dAcct.cur; save(); showD();
+    const b = await dSend({ balance: 1 }); ld.dAcct.bal = b.balance.balance; ld.dAcct.cur = b.balance.currency || ld.dAcct.cur; sess.d = true; save(); showD();
   }
   async function dConnect() {
     const tok = $('c-dtok').value.trim() || ld.dTok, kind = dKind(tok), app = $('c-dapp').value.trim() || ld.dApp || (kind === 'legacy' ? '1089' : '');
@@ -314,17 +314,21 @@
   }
 
   /* ---------- Binance spot ---------- */
-  const bBase = () => ld.bTest ? 'https://testnet.binance.vision' : 'https://api.binance.com';
+  const B_ENV = { live: ['Live (real)', 'https://api.binance.com'], demo: ['Demo Trading (demo.binance.com)', 'https://demo-api.binance.com'], test: ['Spot Testnet (testnet.binance.vision)', 'https://testnet.binance.vision'] };
+  const bEnv = () => (B_ENV[ld.bEnv] ? ld.bEnv : ld.bTest === false ? 'live' : 'demo');
+  const bBase = () => B_ENV[bEnv()][1], bName = () => B_ENV[bEnv()][0];
+  const setEnv = e => { ld.bEnv = e; ld.bTest = e !== 'live'; };
+  const sess = { d: false, b: false };       // proven this session: the socket answered / the signed call worked
   let off = 0;
   const bHint = (msg, status, code) => {
     const ip = (/request ip:\s*([0-9a-f:.]+)/i.exec(msg || '') || [])[1];
-    if (code === -2015 || /invalid api-key|permissions for action/i.test(msg || '')) return `Binance rejected this key. Check in this order:\n1) Account box: Testnet keys only work on Testnet and real keys only on Live (now: ${ld.bTest ? 'Testnet' : 'Live'}).\n2) IP restriction: if the key is limited to trusted IPs, the phone's current address must be on the list${ip ? ' (Binance saw ' + ip + ')' : ''}. Phone addresses change all the time, so for a phone choose "Unrestricted" with trade-only permission, or run the app from a server with a fixed IP.\n3) "Enable Reading" must be ticked on the key.\n4) Paste the whole key with no spaces.`;
+    if (code === -2015 || /invalid api-key|permissions for action/i.test(msg || '')) return `Binance rejected this key. Check in this order:\n1) Account box: Testnet keys only work on Testnet and real keys only on Live (now: ${bName()}). Keys made on demo.binance.com (Demo Trading) only work on the Demo Trading option; keys from testnet.binance.vision only on Spot Testnet.\n2) IP restriction: if the key is limited to trusted IPs, the phone's current address must be on the list${ip ? ' (Binance saw ' + ip + ')' : ''}. Phone addresses change all the time, so for a phone choose "Unrestricted" with trade-only permission, or run the app from a server with a fixed IP.\n3) "Enable Reading" must be ticked on the key.\n4) Paste the whole key with no spaces.`;
     if (code === -1022 || /signature/i.test(msg || '')) return 'The Secret does not match this API key, or it has stray characters. Copy the Secret again (it is shown only once when the key is created).';
     if (code === -1021 || /timestamp/i.test(msg || '')) return 'The phone clock is out of sync. Turn on automatic date and time.';
     if (code === -2014 || /api-key format/i.test(msg || '')) return 'The API key format is wrong. Paste only the key (normally 64 characters).';
     if (status === 451 || /restricted location|eligibility/i.test(msg || '')) return 'Binance blocks this country or network. Try with the VPN switched on or off, or use Testnet.';
     if ([403, 418, 429].includes(status)) return `Binance has temporarily blocked this network (HTTP ${status}). Wait a few minutes and switch off any VPN.`;
-    if (/failed to fetch|network|timed out|load failed|secure/i.test(msg || '')) return 'The app cannot reach Binance. Check the internet and VPN.' + (ld.bTest ? ' The Testnet site is sometimes slow or down.' : '');
+    if (/failed to fetch|network|timed out|load failed|secure/i.test(msg || '')) return 'The app cannot reach Binance. Check the internet and VPN.' + (bEnv() !== 'live' ? ' The demo sites are sometimes slow or down.' : '');
     return '';
   };
   async function bCall(method, path, params) {
@@ -336,21 +340,21 @@
   }
   async function bConnect() {
     const k = clean($('c-bk').value) || ld.bKey, s = clean($('c-bs').value) || ld.bSec; if (!k || !s) return say('c-b-out', 'Paste both the key and the secret.');
-    ld.bKey = k; ld.bSec = s; ld.bTest = $('c-bm').value === 'test'; $('c-bk').value = k; $('c-bs').value = s; say('c-b-out', 'Connecting…'); chip('binance', 'warn', 'Connecting…');
+    ld.bKey = k; ld.bSec = s; setEnv($('c-bm').value); $('c-bk').value = k; $('c-bs').value = s; say('c-b-out', 'Connecting…'); chip('binance', 'warn', 'Connecting…');
     try {
       const t = await (await tfetch(bBase() + '/api/v3/time', {}, 10000)).json(); off = t.serverTime - Date.now();
       const a = await bCall('GET', '/api/v3/account', {}), bal = a.balances.filter(x => +x.free > 0 || +x.locked > 0).slice(0, 8).map(x => `${x.asset} ${(+x.free).toFixed(6)}`);
-      ld.bOk = true; save(); say('c-b-out', `✔ Binance ${ld.bTest ? 'TESTNET (demo)' : 'LIVE (real)'} · trading ${a.canTrade ? 'allowed' : 'NOT allowed'}\n${bal.join('\n') || 'No balances'}\nKey ${mask(k)}`);
-      $('c-b-tag').textContent = ld.bTest ? 'DEMO' : 'REAL'; $('c-b-tag').className = 'tag ' + (ld.bTest ? 'ok' : 'bad'); chip('binance', ld.bTest ? 'ok' : 'live', ld.bTest ? 'Testnet' : 'Live');
+      ld.bOk = true; save(); sess.b = true; say('c-b-out', `✔ Binance ${bName()} · trading ${a.canTrade ? 'allowed' : 'NOT allowed'}\n${bal.join('\n') || 'No balances'}\nKey ${mask(k)}`);
+      $('c-b-tag').textContent = bEnv() !== 'live' ? 'DEMO' : 'REAL'; $('c-b-tag').className = 'tag ' + (bEnv() !== 'live' ? 'ok' : 'bad'); chip('binance', bEnv() !== 'live' ? 'ok' : 'live', bEnv() === 'demo' ? 'Demo' : bEnv() === 'test' ? 'Testnet' : 'Live');
     } catch (e) {
-      ld.bOk = false; save(); chip('binance', 'bad', 'Failed'); const h = bHint(e.message, e.status, e.code);
+      ld.bOk = false; sess.b = false; save(); chip('binance', 'bad', 'Failed'); const h = bHint(e.message, e.status, e.code);
       say('c-b-out', '✖ ' + e.message + (h ? '\n\n' + h : '') + '\n\nTap Diagnose for a step-by-step test.');
     }
   }
   async function bDiagnose() {
     const k = clean($('c-bk').value) || ld.bKey, s = clean($('c-bs').value) || ld.bSec, L = [];
     const log = (ok, t) => { L.push((ok === null ? '…' : ok ? '✔' : '✖') + ' ' + t); say('c-b-out', L.join('\n')); };
-    ld.bTest = $('c-bm').value === 'test'; log(true, `Mode: ${ld.bTest ? 'Testnet (demo keys from testnet.binance.vision)' : 'Live (real keys from binance.com)'}`);
+    setEnv($('c-bm').value); log(true, `Mode: ${bName()}`);
     log(null, 'Reaching Binance…');
     try { const r = await tfetch(bBase() + '/api/v3/time', {}, 10000), t = await r.json(); if (!r.ok) { const e = new Error(t.msg || 'HTTP ' + r.status); e.status = r.status; throw e; } off = t.serverTime - Date.now(); L.pop(); log(true, `Binance reachable · phone clock is ${Math.round(Math.abs(off) / 1000)} s off`); }
     catch (e) { L.pop(); log(false, `Cannot reach ${bBase()}: ${e.message}`); const h = bHint(e.message, e.status, 0); if (h) log(false, h); return; }
@@ -360,18 +364,19 @@
     try { const a = await bCall('GET', '/api/v3/account', {}); L.pop(); log(true, `Key accepted · trading ${a.canTrade ? 'allowed' : 'NOT allowed'}`); log(true, 'All steps passed. Tap Connect.'); }
     catch (e) {
       L.pop(); log(false, e.message); const h = bHint(e.message, e.status, e.code); if (h) log(false, h);
-      if (e.code === -2015) {   // is the key simply for the other account type?
-        const keep = ld.bTest; ld.bTest = !keep;
-        try { await bCall('GET', '/api/v3/account', {}); log(true, `This key WORKS on ${ld.bTest ? 'Testnet' : 'Live'}. Change the Account box to ${ld.bTest ? 'Testnet (demo)' : 'Live (real)'} and tap Connect.`); } catch (x) { log(false, `It is not valid on ${ld.bTest ? 'Testnet' : 'Live'} either, so the problem is the key itself or its IP restriction.`); }
-        ld.bTest = keep;
+      if (e.code === -2015) {   // is the key simply for another Binance environment?
+        const keep = bEnv(); let found = null;
+        for (const o of Object.keys(B_ENV).filter(x => x !== keep)) { setEnv(o); try { await bCall('GET', '/api/v3/account', {}); found = o; break; } catch (x) { /* try next */ } }
+        setEnv(keep);
+        if (found) log(true, `This key WORKS on ${B_ENV[found][0]}. Change the Account box to that option and tap Connect.`); else log(false, 'It is not valid on any Binance environment (Live, Demo Trading, Spot Testnet), so the problem is the key itself or its IP restriction.');
       }
     }
   }
   async function bOrder(side, symbol, amount, isQuote) {
     if (!ld.bOk) throw new Error('Connect Binance first.');
-    if (!ld.bTest && !confirm(`LIVE Binance: ${side} ${symbol} ${amount}${isQuote ? ' USDT' : ''}?`)) throw new Error('Cancelled.');
+    if (bEnv() === 'live' && !confirm(`LIVE Binance: ${side} ${symbol} ${amount}${isQuote ? ' USDT' : ''}?`)) throw new Error('Cancelled.');
     const p = { symbol, side, type: 'MARKET', newClientOrderId: 'TB' + Date.now().toString(36) }; p[isQuote ? 'quoteOrderQty' : 'quantity'] = amount;
-    const o = await bCall('POST', '/api/v3/order', p); ctx.hist(`Binance ${ld.bTest ? 'TEST' : 'LIVE'} ${side} ${symbol} ${o.status} ${o.orderId}`); return o;
+    const o = await bCall('POST', '/api/v3/order', p); ctx.hist(`Binance ${bEnv().toUpperCase()} ${side} ${symbol} ${o.status} ${o.orderId}`); return o;
   }
   async function bManual(side) {
     const sym = $('c-bsy').value.trim().toUpperCase(), amt = $('c-bam').value.trim(); say('c-b-trade', 'Signing… do not tap again.');
@@ -413,7 +418,7 @@
     const c = sig.cand, h = TB.sizing.hybrid({ equity: S.now, riskPct: S.riskPct, stopDist: c.stopDist, price: c.price, manualCap: (+$('c-bam').value || 10) / c.price });
     if (!h.ok) { el.innerHTML = `<div class="empty">${c.symbol}: ${h.why}</div>`; sig = null; return; }
     sig.usdt = Math.floor(h.qty * c.price * 100) / 100;
-    el.innerHTML = `<b>BUY ${c.symbol}</b> · score ${c.score}<p class="muted small">Spend ${sig.usdt} USDT · risk $${h.lossAtStop.toFixed(2)} at the stop (${c.stopDist.toFixed(4)}). ${ld.bTest ? 'TESTNET' : 'LIVE'}</p><button id="c-sigb" class="btn primary">Sign this order</button>`;
+    el.innerHTML = `<b>BUY ${c.symbol}</b> · score ${c.score}<p class="muted small">Spend ${sig.usdt} USDT · risk $${h.lossAtStop.toFixed(2)} at the stop (${c.stopDist.toFixed(4)}). ${bEnv() === 'live' ? 'LIVE' : 'DEMO'}</p><button id="c-sigb" class="btn primary">Sign this order</button>`;
     aiReview(sig, el);
     if (ld.aiGate) aiGate(sig, $('c-sigb'), el);
     $('c-sigb').onclick = async () => { const s = sig; if (!s || $('c-sigb').disabled) return; rt.seen.add(s.key); rt.last[s.cand.symbol] = Date.now(); rt.orders++; $('c-sigb').disabled = true;
@@ -440,7 +445,7 @@
 <div class="row"><button id="c-d-go" class="btn primary">Connect</button><button id="c-d-diag" class="btn">Diagnose</button></div><pre id="c-d-out" class="out">Not connected.</pre>
 <div class="fields">${F('c-dsy', 'Symbol', 'value="R_100"')}<label>Type<select id="c-dty"><option value="CALL">CALL (up)</option><option value="PUT">PUT (down)</option></select></label>${F('c-dst', 'Stake', 'type="number" value="1" min="0.35" step="0.01"')}${F('c-ddu', 'Duration', 'type="number" value="5" min="1"')}<label>Unit<select id="c-dun"><option value="t">ticks</option><option value="m">minutes</option></select></label></div>
 <div class="row"><button id="c-dq" class="btn">Get price</button><button id="c-dsign" class="btn primary" disabled>Sign contract</button></div><pre id="c-d-trade" class="out"></pre></div>
-<div class="card form"><div class="card-title"><div><div class="eyebrow">Spot</div><h3>Binance</h3></div><span id="c-b-tag" class="tag">—</span></div><div class="fields">${F('c-bk', 'API key', 'type="password"')}${F('c-bs', 'Secret', 'type="password"')}<label>Account<select id="c-bm"><option value="test">Testnet (demo)</option><option value="live">Live (real)</option></select></label></div>
+<div class="card form"><div class="card-title"><div><div class="eyebrow">Spot</div><h3>Binance</h3></div><span id="c-b-tag" class="tag">—</span></div><div class="fields">${F('c-bk', 'API key', 'type="password"')}${F('c-bs', 'Secret', 'type="password"')}<label>Account<select id="c-bm"><option value="demo">Demo Trading (demo.binance.com)</option><option value="test">Spot Testnet (testnet.binance.vision)</option><option value="live">Live (real)</option></select></label></div>
 <div class="row"><button id="c-b-go" class="btn primary">Connect</button><button id="c-b-diag" class="btn">Diagnose</button></div><pre id="c-b-out" class="out">Not connected.</pre>
 <div class="fields">${F('c-bsy', 'Symbol', 'value="BTCUSDT"')}${F('c-bam', 'BUY: USDT to spend · SELL: coin quantity', 'type="number" value="10" step="any"')}</div>
 <div class="row"><button id="c-bb" class="btn primary">Sign BUY</button><button id="c-bsl" class="btn danger">Sign SELL</button></div><pre id="c-b-trade" class="out"></pre>
@@ -452,7 +457,7 @@
     b.onclick = open;
     const card = document.createElement('div'); card.className = 'card cta'; card.innerHTML = `<div><b>Keys &amp; balance</b><p class="muted small">Deriv, Binance and the AI keys connect here · build v7.1</p></div><button id="c-go" class="btn primary">Open Connect</button>`; document.getElementById('view-scan').prepend(card); $('c-go').onclick = open;
     document.querySelectorAll('#conn-strip .chip').forEach(c => { c.onclick = open; });
-    $('c-rem').checked = !!ld.remember; $('c-bm').value = ld.bTest === false ? 'live' : 'test'; $('c-ai-mode').value = ld.aiMode || 'failover'; $('c-ai-auto').checked = ld.aiAuto !== false;
+    $('c-rem').checked = !!ld.remember; $('c-bm').value = bEnv(); $('c-ai-mode').value = ld.aiMode || 'failover'; $('c-ai-auto').checked = ld.aiAuto !== false;
     $('c-ai-go').onclick = () => aiTest(1); $('c-ai2-go').onclick = () => aiTest(2); $('c-d-go').onclick = dConnect; $('c-d-diag').onclick = dDiagnose; $('c-dacc').onchange = e => dPick(e.target.value).catch(x => say('c-d-out', '✖ ' + x.message)); $('c-dq').onclick = dQuote; $('c-dsign').onclick = dSign;
     $('c-ai-model').onchange = e => { ld.aiModel = e.target.value; save(); }; $('c-ai2-model').onchange = e => { ld.ai2Model = e.target.value; save(); };
     $('c-ai-mode').onchange = e => { ld.aiMode = e.target.value; save(); }; $('c-ai-auto').onchange = e => { ld.aiAuto = e.target.checked; save(); };
@@ -468,6 +473,16 @@
     if (ld.dAcct) { $('c-dacc').innerHTML = (ld.dAccts || []).map(a => `<option value="${a.id}"${a.id === ld.dAcct.id ? ' selected' : ''}>${a.demo ? 'DEMO' : 'REAL'} ${a.id}</option>`).join(''); if (ld.dApp) $('c-dapp').value = ld.dApp; showD(); chip('deriv', 'warn', 'Saved · tap to refresh'); }
     if (ld.bOk) { say('c-b-out', 'Saved key ' + mask(ld.bKey) + '. Tap Connect to refresh the balance.'); chip('binance', 'warn', 'Saved · tap to refresh'); }
   }
-  function init(c) { ctx = c; ctx.hist = c.hist || (() => {}); build(); }
-  window.TB = window.TB || {}; window.TB.live = { init, onScan, ask, askJson: (p, sy) => askFailover(p, sy), hasAI, binance: { ready: () => !!ld.bOk, isTest: () => !!ld.bTest, base: () => bBase(), call: (m, p, q) => bCall(m, p, q), pub: async p => { const r = await tfetch(bBase() + p, {}, 15000), j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.msg || 'Binance HTTP ' + r.status); return j; } }, _t: { aiTest, setLd: v => { ld = v; }, rankModels, callSlot, teamRun, hmacHex, verdictOf, clean, bHint } };
+  /** Saved keys are re-verified in the background at start-up, so the app does not need a manual Connect tap after every restart. */
+  async function autoReconnect() {
+    if (ld.dTok && ld.dAcct && ld.dAcct.id) { try { chip('deriv', 'warn', 'Reconnecting…'); await dPick(ld.dAcct.id); } catch (e) { sess.d = false; chip('deriv', 'bad', 'Reconnect failed'); say('c-d-out', '✖ ' + e.message + '\nTap Connect to try again.'); } }
+    if (ld.bKey && ld.bSec && ld.bOk) { try { chip('binance', 'warn', 'Reconnecting…'); const t = await (await tfetch(bBase() + '/api/v3/time', {}, 10000)).json(); off = t.serverTime - Date.now(); await bCall('GET', '/api/v3/account', {}); sess.b = true; chip('binance', bEnv() !== 'live' ? 'ok' : 'live', bEnv() === 'demo' ? 'Demo' : bEnv() === 'test' ? 'Testnet' : 'Live'); } catch (e) { sess.b = false; chip('binance', 'bad', 'Reconnect failed'); say('c-b-out', '✖ ' + e.message + (bHint(e.message, e.status, e.code) ? '\n\n' + bHint(e.message, e.status, e.code) : '')); } }
+  }
+  function init(c) { ctx = c; ctx.hist = c.hist || (() => {}); build(); setTimeout(autoReconnect, 300); }
+  const derivApi = { ready: () => !!(ld.dAcct && sess.d), acct: () => ld.dAcct, send: msg => dSend(msg), kind: () => dKind(ld.dTok),
+    refresh: async () => { const b = await dSend({ balance: 1 }); ld.dAcct.bal = b.balance.balance; ld.dAcct.cur = b.balance.currency || ld.dAcct.cur; save(); return ld.dAcct; } };
+  const binApi = { ready: () => !!ld.bOk, live: () => !!(ld.bOk && sess.b), env: bEnv, envName: bName, isTest: () => bEnv() !== 'live', base: () => bBase(), call: (m, p, q) => bCall(m, p, q),
+    pub: async p => { const r = await tfetch(bBase() + p, {}, 15000), j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.msg || 'Binance HTTP ' + r.status); return j; },
+    balance: async () => { const a = await bCall('GET', '/api/v3/account', {}), u = a.balances.find(b => b.asset === 'USDT') || { free: 0, locked: 0 }; return { cash: +u.free, total: +u.free + +u.locked, canTrade: !!a.canTrade, env: bEnv() }; } };
+  window.TB = window.TB || {}; window.TB.live = { init, onScan, ask, askJson: (p, sy) => askFailover(p, sy), hasAI, binance: binApi, deriv: derivApi, _t: { aiTest, setLd: v => { ld = v; }, rankModels, callSlot, teamRun, hmacHex, verdictOf, clean, bHint } };
 })();

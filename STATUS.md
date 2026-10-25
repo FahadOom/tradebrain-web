@@ -1,37 +1,29 @@
-# AI BRAIN ULTIMATE (v8.0) · status, tests and limits
+# AI BRAIN ULTIMATE (v9.0) · status, tests and limits
 
-## What you have
-A static PWA/Android app (no server needed) that scans Binance candles, runs 8 strategies, convenes an extended Traders Council, asks your AI key(s) for a schema-validated decision, passes everything through an independent risk engine, and can trade automatically (Paper by default, Binance Spot Testnet/Live when connected).
+## What changed in v9
+* **Broker-gated markets.** No broker connected = no markets, charts, signals or auto trading (like a terminal that is not logged in). Deriv connected → Deriv; only Binance → Binance; both → Deriv (unless you pick Binance on the Auto screen, or the Binance executor is active, because Binance cannot trade Deriv symbols). Closed/suspended Deriv markets are marked and skipped. Deriv candles have no volume; the volume tests are ignored for them instead of blocking everything.
+* **Binance Demo Trading** (demo.binance.com keys → `demo-api.binance.com`) is a separate option from Spot Testnet and Live. Diagnose tells you which environment a key belongs to. Saved keys reconnect at start-up.
+* **Scalp trigger.** NORMAL: the main strategy must see the trade AND ≥2 Council traders agree, then the AI must approve, then the risk engine. MADBOT: main strategy + 1 trader, or 2 traders alone.
+* **A+ = long-term.** Own timeframe (default 1h), TP1 + TP2, stop to break-even at TP1, hold up to 3 days. The AI re-checks every open A+ trade each candle: it can exit before TP1, tighten the stop, and after TP1 any sign of reversal closes the trade.
+* **AI controls size and entries.** The AI proposes a size factor (can only reduce risk) and how many entries a market deserves; the risk engine and your manual cap still have the last word. Manual size mode ignores the AI.
+* **MADBOT scout.** Sweeps the broker's open markets, the AI picks the most promising for scalping; if the AI is down the backup analyst (rule-based) keeps scalping, with looser (but still hard) portfolio limits.
+* **Overview** shows each broker's balance, paper account and an editable Goal (start / target / deadline). No hidden 10 → 30 any more; the start follows the traded account until you set a goal.
+* **Signals tab** (Watch / Ready / Buys / Sells / A+), **Tests tab** (1h, 4h, 7-day A+ replays), Council without charts, Charts drawn by the main strategy with its lines.
+* **Deriv execution** through multiplier contracts (stop-loss/take-profit held by Deriv).
+* **Background running** (APK): foreground service + wake lock; timers come from a Web Worker.
 
-## Honest findings about the files you sent
-* `TradeBrain__19_.apk` and the `.sh` contain the SAME web build (identical JS). **Neither contains any chart code**, so the charts were built from scratch here (candles, EMA lines, channels, Bollinger, S/R, order blocks, FVG, trendlines, long/short boxes, RSI/MACD/volume pane). If an older build had charts, it was not in these files.
-* The original AI Brain source / "original Council" was not supplied. The Council in these files is a rule-based reconstruction (Trend, Momentum, Breakout, Noise voters; Risk, Execution gates). It is kept **unchanged** (`js/council.js`, shown under "Original Council") and extended, not replaced.
-
-## Feature status
-| Feature | Status |
+## What is verified and what is not
+| Item | Status |
 |---|---|
-| Candle charts, overlays, per-member Council charts (9 voters + 4 gates, each with own chart) | Implemented, rendered in headless Chrome at phone size |
-| 8 strategies + regime + A+ checklist | Implemented, unit tested on synthetic data only |
-| Extended Council (family voting, weights, regime fit, portfolio gate) | Implemented, tested |
-| AI Brain (structured packet, JSON schema validation, cache, rate limit, policy Required/Advisory/Off) | Implemented, tested with a **mock** AI. Not tested with a real Grok/Gemini key |
-| Independent risk engine (22 checks), Hybrid/AI/Manual sizing | Implemented, tested |
-| Continuous controller (scan > decide > order > manage > exit > journal > rescan), MADBOT/NORMAL/A+ | Implemented, tested end-to-end on **paper** |
-| Paper execution (live prices, fees, slippage) | Implemented, tested |
-| Binance Spot execution (exchange filters, step rounding, fees, reconcile, uncertain-order handling) | Implemented, tested against a **mock API only**. Not tested on Testnet or Live. Test on Testnet first |
-| Mission Control statuses, target/deadline/daily-loss halts | Implemented, tested |
-| Journal with rationale, council, AI, risk checks, post-trade review; JSON export | Implemented |
-| Deriv, Exness/MT5 auto-execution | **Not wired** to the controller. Manual consoles from v7 still work. MT5 needs the Windows backend |
-| Binance Futures, partial exits, WebSockets, backtesting module, Telegram, spread data | Not implemented |
-| Two-key Grok routing | Uses the existing two-slot failover from Connect; no quota evasion |
+| Engine, risk, controller, AI supervision, scout, backtest, data layer | Unit tested (`npm test`, ~350 assertions) with mocks |
+| Whole app in headless Chrome against a **simulated** Deriv socket | Passed: markets, scan, signals, charts, council, tests, Overview |
+| Deriv multiplier orders | Written against Deriv's documented messages, tested on a **mock** only. Never placed on the real Deriv. Try the DEMO account with small stakes first. Markets without multipliers are refused with a reason |
+| Binance Demo Trading | Endpoint added; not tested with your keys from here |
+| AI replies | Tested with mock AI only |
+| Android foreground service | Written but **not compiled here**. The workflow builds with it and falls back to a plain APK if it fails to compile |
+| Profitability | Nothing shows an edge. Replays describe the past only. Run on demo for weeks |
 
-## Limits you must know
-* **It only trades while the app is open and online.** No server: closing the app or sleeping the phone stops scanning and exit-watching. Binance Spot exits (stop/target) are watched by the app, not placed on the exchange, so an open position is unprotected while the app is closed. Reliable 24/7 needs a host (e.g. the Python backend on a always-on machine); that part is not built.
-* Binance Spot cannot short: SELL signals are ignored there. Paper mode can short (simulation).
-* With about $10, Binance minimum order (~$5) and 0.1% fees per side, many 15m scalps fail the cost check (fees must be under half the target distance). That is the engine refusing trades whose fees would eat the edge, not a bug.
-* Keys saved by Connect live in browser storage (v7 behaviour, your choice for no-VPS use). Use trade-only keys, never withdrawal rights.
-* Your earlier 1h backtest showed no edge (about -0.12R). Nothing here has been shown to be profitable. Run Paper for weeks, read the journal, then Testnet, before any live money.
-* Auto switches are never saved: every session starts with orders OFF, paper mode.
-
-## Tests run
-`npm test` : core, gates, sizing (original, still passing) + `tests/engine.test.js` (270 assertions: indicators, strategies, council, risk, AI validation, controller scenarios, mocked Binance). Scenarios covered: no opportunity, several opportunities, duplicate signal, win/loss exits, stop-vs-target same bar, gap fill, break-even/trail, time exit, target reached, deadline, daily loss, emergency stop, uncertain order (not repeated), restart mid-close, AI reject/approve/down, long-only broker.
-Browser: loaded at 390px width with mocked Binance data, no console errors, no horizontal overflow, paper auto-trade opened positions. Not tested: real Binance, real AI, a physical Android device, Deriv/MT5.
+## Limits
+* Android may still stop apps aggressively: allow "Unrestricted" battery for the app. iPhones/browsers cannot trade in the background.
+* Deriv stop moves (break-even/trailing) are enforced by the app while it runs; the server-side stop stays at the original level as a backstop.
+* No partial closes, no Futures, no WebSockets for Binance.

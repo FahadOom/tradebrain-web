@@ -5,7 +5,8 @@
   else { root.TB = root.TB || {}; root.TB.scanner = api; }
 })(typeof self !== 'undefined' ? self : this, function (ind) {
   'use strict';
-  const TF_MS = { '1m': 6e4, '5m': 3e5, '15m': 9e5, '1h': 36e5 };
+  const TF_MS = { '1m': 6e4, '2m': 12e4, '3m': 18e4, '5m': 3e5, '10m': 6e5, '15m': 9e5, '30m': 18e5, '1h': 36e5, '2h': 72e5, '4h': 144e5, '8h': 288e5, '1d': 864e5 };
+  let provider = null;      // set by the data layer: candles then come from the connected broker only
 
   /**
    * Rules (same ideas as the original AI Brain scanner):
@@ -41,12 +42,13 @@
     return {
       symbol, tf, price: last.c, time: last.t, signal, why, score, reasons,
       trend: e9 > e21 ? 'Bullish' : e9 < e21 ? 'Bearish' : 'Flat',
-      ema9: e9, ema21: e21, ema50: e50, rsi, macd: m ? m.hist : null, atr, eff, vol, channel: ch,
+      ema9: e9, ema21: e21, ema50: e50, rsi, macd: m ? m.hist : null, atr, eff, vol, noVolFeed: candles.every(c => c.v == null), channel: ch,
       stopDist: stop, targetDist: stop ? stop * s.minRR : null, bull, bear,
     };
   }
 
   async function fetchCandles(symbol, tf, closedOnly = true, timeout = 10000) {
+    if (provider) return provider(symbol, tf, closedOnly, timeout);
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeout);
     try {
       const url = `https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(tf)}&limit=200`;
@@ -76,5 +78,5 @@
     results.sort((a, b) => symbols.indexOf(a.symbol) - symbols.indexOf(b.symbol));
     return { results, errors };
   }
-  return { analyse, fetchCandles, scanAll, TF_MS };
+  return { analyse, fetchCandles, scanAll, TF_MS, setProvider: fn => { provider = fn; } };
 });

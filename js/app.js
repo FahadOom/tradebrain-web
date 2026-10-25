@@ -25,7 +25,26 @@
   const empty = t => h('div', { class: 'empty' }, t);
   function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 2600); }
   const effOpts = () => ({ ...S(), minEff: S().minEffPct / 100 });
-  const tfMs = () => scanner.TF_MS[S().tf] || 9e5;
+  /** Timeframe of the active mode: A+ trades are long-term (hourly), MADBOT scalps fast, NORMAL uses the Scanner selector. */
+  const modeTf = () => (S().mode === 'aplus' ? S().tfA : S().mode === 'mad' ? S().tfMad : S().tf);
+  const tfMs = () => scanner.TF_MS[modeTf()] || 9e5;
+  let scoutState = null, scouting = false;
+  /** Markets to scan: MADBOT -> the scout's picks; otherwise your watchlist for the connected broker. Open positions are always included. */
+  function scanSymbols() {
+    let list = S().mode === 'mad' && S().madScout && scoutState && scoutState.picks.length ? scoutState.picks.map(p => p.symbol) : TB.data.getWatch(S()).slice();
+    ((TB.ctl && TB.ctl.st.positions) || []).forEach(p => { if (!list.includes(p.symbol)) list.push(p.symbol); });
+    return list;
+  }
+  async function maybeScout(force) {
+    if (S().mode !== 'mad' || !S().madScout || scouting) return;
+    if (!force && scoutState && Date.now() - scoutState.at < S().scoutMin * 60e3) return;
+    scouting = true; setStatus('MADBOT scout: sweeping the broker\'s markets…');
+    try {
+      scoutState = await TB.scout.run({ markets: () => TB.data.markets(), watch: TB.data.getWatch(S()), cap: S().sweepMax, top: S().madTop, tf: S().tfMad, scan: (syms, tf, onP) => scanner.scanAll(syms, tf, effOpts(), onP),
+        onProgress: (d, n) => setStatus(`MADBOT scout: reading ${d}/${n} markets…`), brain: TB.brainI, backup: S().madBackup, aiAvailable: () => TB.live.hasAI() && S().aiPolicy !== 'off', now: Date.now });
+      if (TB.ctl) TB.ctl.log('scout', `Scout (${scoutState.by}) swept ${scoutState.swept} markets and picked ${scoutState.picks.length}: ${scoutState.picks.map(p => p.symbol + ' ' + p.bias).join(', ') || 'none'}. ${scoutState.note || ''}`, scoutState.picks.length ? 'good' : 'warn');
+    } catch (e) { setStatus('Scout failed: ' + e.message, 'warn'); } finally { scouting = false; }
+  }
   const review = r => council.review(r, effOpts(), scanner.TF_MS[r.tf] || 9e5);
 
   // ---------- navigation ----------
@@ -37,6 +56,7 @@
     document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('active', b.dataset.view === (PRIMARY.includes(view) ? view : 'more')));
     window.scrollTo({ top: 0 });
     if (view === 'broker') TB.exec.refresh();
+    if (view === 'markets') loadMarkets(false);
     if (TB.ui2) TB.ui2.onView(view);
   }
   window.TB = window.TB || {}; TB.nav = { go };
@@ -47,21 +67,30 @@
 
   async function runScan() {
     const btn = $('scan-btn'); btn.disabled = true; btn.textContent = 'Scanning…';
-    setStatus('Reading public Binance candles…');
     try {
-      const out = await scanner.scanAll(S().watch, S().tf, effOpts(), (d, n) => setStatus(`Scanning ${d}/${n}…`));
+      const src = TB.data.source();
+      if (!src) {      // no broker, no markets (same idea as a desktop terminal that is not logged in)
+        results = []; renderScan(); setNet('No broker', 'bad'); setStatus('Connect Deriv or Binance first. Markets, charts and signals come only from a connected broker.', 'warn');
+        if (TB.ui3) TB.ui3.refresh(); return [];
+      }
+      if (TB.data.watchKey() === 'watchD' && !S().watchD.length) { try { S().watchD = TB.data.defaultWatch(await TB.data.markets(), 'deriv'); persist(); } catch (e) { /* reported below */ } }
+      await maybeScout(false);
+      const tf = modeTf(), list = scanSymbols();
+      setStatus(`Reading ${src.label} candles…`);
+      const out = await scanner.scanAll(list, tf, effOpts(), (d, n) => setStatus(`Scanning ${d}/${n} on ${src.label}…`));
       results = out.results;
       renderScan();
       if (results.length) {
         logSignals(); persist();
-        setNet('Data live', 'ok');
-        setStatus(`Scanned ${results.length} markets on ${S().tf}.` + (out.errors.length ? ` ${out.errors.length} failed: ${out.errors[0]}` : ''), out.errors.length ? 'warn' : 'ok');
+        setNet(src.label + ' live', 'ok');
+        setStatus(`Scanned ${results.length} ${src.label} markets on ${tf}${S().mode === 'mad' && scoutState ? ' (MADBOT picks by ' + scoutState.by + ')' : ''}.` + (out.errors.length ? ` ${out.errors.length} failed: ${out.errors[0]}` : ''), out.errors.length ? 'warn' : 'ok');
       } else {
         setNet('No data', 'bad');
         setStatus('Could not load market data. ' + (out.errors[0] || 'Check your connection.'), 'warn');
       }
       scans++; renderQueue();
       if (TB.ui2) await TB.ui2.onResults(results);
+      if (TB.ui3) TB.ui3.refresh();
       return results;
     } finally { btn.disabled = false; btn.textContent = 'Scan'; }
   }
@@ -161,12 +190,12 @@
     S().mode = $('a-mode').value; S().reentry = $('a-reentry').value; S().councilMin = Number($('a-cmin').value) || 2;
     Object.assign(state.settings, store.clean(state.settings), { autoOn: S().autoOn, autoLive: S().autoLive }); persist();
     const kill = gates.killSwitch(S()); if (kill) return toast(kill);
-    loop = setInterval(tick, S().interval * 1000); tick();
+    loop = TB.bg.every(tick, S().interval * 1000); tick();
     $('loop-start').disabled = true; $('loop-stop').disabled = false; $('loop-tag').textContent = 'SCANNING'; $('loop-tag').className = 'tag ok';
     $('loop-msg').textContent = `Scanning every ${S().interval}s in ${S().mode.toUpperCase()} mode. Orders only if Auto trade is on in Broker.`;
   }
   function stopLoop() {
-    clearInterval(loop); loop = null;
+    if (loop) loop.stop(); loop = null;
     $('loop-start').disabled = false; $('loop-stop').disabled = true; $('loop-tag').textContent = 'PAUSED'; $('loop-tag').className = 'tag warn'; $('loop-msg').textContent = 'Paused.';
   }
 
@@ -211,10 +240,10 @@
     $('r-rr').value = s.minRR; $('r-eff').value = s.minEffPct; $('r-jit').checked = s.jitterOn; $('r-vol').checked = s.volumeOn; $('r-closed').checked = s.closedOnly; $('r-action').value = s.action;
   }
   function renderMission() {
-    const s = S(), span = Math.max(0.01, s.goal - s.start), pct = Math.max(0, Math.min(100, (s.now - s.start) / span * 100));
-    $('m-text').textContent = `${money(s.now)} of ${money(s.goal)}`; $('m-bar').style.width = pct + '%';
+    const s = S(), span = Math.max(0.01, s.goal - s.start), pct = s.goal > 0 ? Math.max(0, Math.min(100, (s.now - s.start) / span * 100)) : 0;
+    $('m-text').textContent = s.goal > 0 ? `${money(s.now)} of ${money(s.goal)}` : `${money(s.now)} · no target set`; $('m-bar').style.width = pct + '%';
     const late = s.deadline && new Date(s.deadline) < new Date();
-    $('m-note').textContent = `${pct.toFixed(0)}% of the way from ${money(s.start)}. ` + (s.deadline ? (late ? 'Deadline has passed.' : 'Deadline ' + when(s.deadline) + '.') : '') + ` A ${((s.goal / s.start - 1) * 100).toFixed(0)}% gain is a very aggressive goal.`;
+    $('m-note').textContent = s.goal > 0 ? `${pct.toFixed(0)}% of the way from ${money(s.start)}. ` + (s.deadline ? (late ? 'Deadline has passed.' : 'Deadline ' + when(s.deadline) + '.') : '') + ` A ${((s.goal / s.start - 1) * 100).toFixed(0)}% gain is a goal, not a promise.` : 'Set your own target on the Overview screen (Goal card).';
     $('k-risk').textContent = money(s.now * s.riskPct / 100); $('k-stop').textContent = money(s.start * s.lossPct / 100); $('k-floor').textContent = money(s.start * (1 - s.lossPct / 100));
     const kill = gates.killSwitch(s); $('k-kill').textContent = kill ? 'TRIPPED' : 'OK'; $('k-kill').className = kill ? 'down' : 'up'; $('m-state').textContent = kill ? 'STOPPED' : 'TRACKING';
   }
@@ -226,28 +255,37 @@
     $('z-check').textContent = u * e > eq * 5 ? 'OVER 5× equity' : 'Within 5×'; $('z-check').className = u * e > eq * 5 ? 'down' : 'up';
   }
 
-  // ---------- markets ----------
+  // ---------- markets (only from a connected broker) ----------
   function renderMarkets() {
     const q = $('mk-search').value.trim().toUpperCase(), list = $('mk-list'); list.replaceChildren();
-    $('mk-count').value = `${S().watch.length} / 20`;
-    const rows = (discovered.length ? discovered : S().watch.map(s => ({ symbol: s, base: s.replace('USDT', '') }))).filter(m => m.symbol.includes(q)).slice(0, 200);
-    if (!rows.length) return list.append(empty('No matching symbols.'));
+    const src = TB.data.source();
+    if (!src) { $('mk-count').value = '—'; $('mk-status').textContent = 'No broker connected.'; return list.append(empty('Connect Deriv or Binance in the Connect tab. The market list comes only from the broker you connect (Deriv wins when both are connected).')); }
+    const key = TB.data.watchKey(), cap = key === 'watchD' ? 40 : 20, w = () => S()[key];
+    $('mk-count').value = `${w().length} / ${cap}`;
+    const rows = (discovered.length ? discovered : w().map(sy => ({ symbol: sy, name: sy, group: src.label, open: true }))).filter(m => (m.symbol + ' ' + (m.name || '')).toUpperCase().includes(q)).slice(0, 400);
+    if (!rows.length) return list.append(empty('No matching markets.'));
+    let lastG = null;
     rows.forEach(m => {
-      const on = S().watch.includes(m.symbol);
-      list.append(h('label', { class: 'item row between' }, h('div', {}, h('b', {}, m.symbol), h('small', {}, m.base + ' / USDT · Spot')), h('input', { type: 'checkbox', checked: on ? 'checked' : false, onchange: e => {
-        if (e.target.checked) { if (S().watch.length >= 20) { e.target.checked = false; return toast('Maximum 20 markets.'); } S().watch.push(m.symbol); } else S().watch = S().watch.filter(x => x !== m.symbol);
-        persist(); $('mk-count').value = `${S().watch.length} / 20`; } })));
+      if (m.group !== lastG) { lastG = m.group; list.append(h('div', { class: 'eyebrow', style: 'margin-top:10px' }, m.group)); }
+      const on = w().includes(m.symbol);
+      list.append(h('label', { class: 'item row between' }, h('div', {}, h('b', {}, m.name || m.symbol), h('small', {}, m.symbol + (m.open === false ? ' · CLOSED now' : '') + (m.sub ? ' · ' + m.sub : ''))), h('input', { type: 'checkbox', checked: on ? 'checked' : false, disabled: m.open === false && !on ? 'disabled' : false, onchange: e => {
+        if (e.target.checked) { if (w().length >= cap) { e.target.checked = false; return toast(`Maximum ${cap} markets in the watchlist.`); } S()[key] = [...w(), m.symbol]; } else S()[key] = w().filter(x => x !== m.symbol);
+        persist(); $('mk-count').value = `${w().length} / ${cap}`; } })));
     });
   }
-  async function loadMarkets() {
-    $('mk-status').textContent = 'Loading Binance Spot…';
+  async function loadMarkets(force) {
+    const src = TB.data.source(); if (!src) { renderMarkets(); return; }
+    $('mk-status').textContent = `Loading ${src.label} markets…`; $('mk-status').className = 'status';
     try {
-      const res = await fetch('https://api.binance.com/api/v3/exchangeInfo?permissions=SPOT', { cache: 'no-store' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const d = await res.json();
-      discovered = d.symbols.filter(s => s.status === 'TRADING' && s.quoteAsset === 'USDT').map(s => ({ symbol: s.symbol, base: s.baseAsset })).sort((a, b) => a.symbol.localeCompare(b.symbol));
-      $('mk-status').textContent = `${discovered.length} USDT pairs trading. Public data only; no account connected.`; renderMarkets();
+      discovered = await TB.data.markets(force);
+      const open = discovered.filter(m => m.open !== false).length;
+      $('mk-status').textContent = `${discovered.length} markets from ${src.label} (${open} open now). Source: ${src.reason}.`; renderMarkets();
     } catch (e) { $('mk-status').textContent = 'Could not load markets: ' + e.message; $('mk-status').className = 'status warn'; }
+  }
+  function addAllOpen() {
+    const src = TB.data.source(); if (!src || !discovered.length) return toast('Load the list first.');
+    const key = TB.data.watchKey(), cap = key === 'watchD' ? 40 : 20; const open = discovered.filter(m => m.open !== false).map(m => m.symbol);
+    S()[key] = [...new Set([...S()[key], ...open])].slice(0, cap); persist(); renderMarkets(); toast(`Watching ${S()[key].length} markets. MADBOT sweeps every open market on its own.`);
   }
 
   // ---------- broker tab ----------
@@ -301,11 +339,13 @@
     $('lab-new').addEventListener('click', newStrategy);
     $('risk-form').addEventListener('submit', e => {
       e.preventDefault(); const f = { ...S(), start: +$('r-start').value, now: +$('r-now').value, goal: +$('r-goal').value, deadline: $('r-deadline').value, riskPct: +$('r-risk').value, lossPct: +$('r-loss').value, minRR: +$('r-rr').value, minEffPct: +$('r-eff').value, jitterOn: $('r-jit').checked, volumeOn: $('r-vol').checked, closedOnly: $('r-closed').checked, action: $('r-action').value };
-      if (f.goal <= f.start) return toast('Target must be above the starting balance.');
+      if (f.goal > 0 && f.goal <= f.start) return toast('Target must be above the starting balance (or 0 for no target).');
+      f.goalSet = f.goal > 0;
       Object.assign(state.settings, store.clean(f)); persist(); fillRisk(); renderMission(); toast('Saved');
     });
     ['z-eq', 'z-risk', 'z-entry', 'z-stop'].forEach(id => $(id).addEventListener('input', calcSize));
-    $('mk-load').addEventListener('click', loadMarkets); $('mk-search').addEventListener('input', renderMarkets);
+    $('mk-load').addEventListener('click', () => loadMarkets(true)); $('mk-all').addEventListener('click', addAllOpen); $('mk-search').addEventListener('input', renderMarkets);
+    window.addEventListener('tb-conn', () => { discovered = []; renderMarkets(); if (TB.ui3) TB.ui3.refresh(); });
     $('be-test').addEventListener('click', testBackend);
     ['au-on', 'au-live', 'au-score', 'au-max'].forEach(id => $(id).addEventListener('change', syncAuto));
     $('bk-export').addEventListener('click', exportBackup); $('bk-import').addEventListener('change', e => e.target.files[0] && importBackup(e.target.files[0]));
@@ -315,8 +355,9 @@
     $('install-btn').addEventListener('click', async () => { if (deferred) { deferred.prompt(); await deferred.userChoice; deferred = null; $('install-btn').hidden = true; } });
     TB.exec.init({ S, toast, council: review, autoLog, onOrder: n => { $('lp-orders').textContent = n; } });
     try { TB.live.init({ S, toast, council: review, hist: t => toast(t) }); } catch (e) { console.error('live init', e); }
-    TB.app = { runScan, S, persist, toast, results: () => results, startLoop, stopLoop, isLooping: () => !!loop, state, go, setStatus };
+    TB.app = { runScan, S, persist, toast, results: () => results, startLoop, stopLoop, isLooping: () => !!loop, state, go, setStatus, tf: modeTf, scout: () => scoutState, runScout: () => maybeScout(true), scanSymbols, effOpts };
     if (TB.ui2) TB.ui2.init();
+    if (TB.ui3) TB.ui3.init();
     boot();
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
